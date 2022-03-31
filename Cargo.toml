@@ -1,0 +1,17 @@
+[package]
+name = "course_oop"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+relm4 = { git = "https://github.com/Relm4/relm4", branch = "next", features = [ "macros" ] }
+home = "0.5"
+serde = { version = "1.0", features=["derive"] }
+bincode = "1.3.3"
+byte-unit = {version="4.0",features = ["serde"]}
+fs_extra = "1.2"
+anyhow = "1.0"
+chrono = "0.4"
+same-file = "1.0"
