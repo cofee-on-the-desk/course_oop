@@ -33,6 +33,16 @@ impl From<FileType> for ItemType {
     }
 }
 
+impl ItemType {
+    pub fn icon_path(&self) -> &'static str {
+        match self {
+            ItemType::Dir => "assets/folder.png",
+            ItemType::File => "assets/file.png",
+            ItemType::Symlink => "assets/symlink.png",
+        }
+    }
+}
+
 /// An Item represents a single element of the filesystem.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Item {
@@ -68,5 +78,28 @@ impl Item {
             self.size = Some(bytes);
             Ok(bytes)
         }
+    }
+}
+
+/// Wrapper over a path variable.
+///
+/// Required for the `TryFrom` implementation of `Item`.
+pub struct InputWrapper<P: AsRef<Path>>(pub P);
+
+impl<P> TryFrom<InputWrapper<P>> for Item
+where
+    P: AsRef<Path>,
+{
+    type Error = anyhow::Error;
+    fn try_from(path: InputWrapper<P>) -> anyhow::Result<Self> {
+        let path = path.0;
+        let metadata = std::fs::symlink_metadata(&path)?;
+        let tp = ItemType::try_from(metadata.file_type()).expect("Unknown file type.");
+        let path = path.as_ref().to_owned();
+        Ok(Item {
+            path,
+            tp,
+            size: None,
+        })
     }
 }

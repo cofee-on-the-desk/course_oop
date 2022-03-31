@@ -1,5 +1,3 @@
-mod error_dialog;
-pub use error_dialog::*;
+pub mod error_dialog;
 
-mod property_window;
-pub use property_window::*;
+pub mod property_window;
