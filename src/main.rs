@@ -1,3 +1,4 @@
+mod components;
 mod db;
 mod lib;
 
