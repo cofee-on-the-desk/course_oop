@@ -1,3 +1,4 @@
+mod components;
 mod lib;
 
 fn main() {
