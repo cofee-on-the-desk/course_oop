@@ -100,26 +100,28 @@ impl SimpleComponent for App {
             set_default_height: 640,
             set_titlebar = Some(&gtk::HeaderBar) {
                 pack_start = &gtk::Button::from_icon_name("go-previous") {
-                    set_sensitive: watch!(model.data.explorer.history().can_go_back()),
-                    connect_clicked(sender) => move |_| {
+                    #[watch]
+                    set_sensitive: model.data.explorer.history().can_go_back(),
+                    connect_clicked[sender] => move |_| {
                         sender.input(AppMsg::GoBack);
                     }
                 },
                 pack_start = &gtk::Button::from_icon_name("go-next") {
-                    set_sensitive: watch!(model.data.explorer.history().can_go_forward()),
-                    connect_clicked(sender) => move |_| {
+                    #[watch]
+                    set_sensitive: model.data.explorer.history().can_go_forward(),
+                    connect_clicked[sender] => move |_| {
                         sender.input(AppMsg::GoForward);
                     }
                 },
                 pack_end = &gtk::Button::from_icon_name("view-refresh") {
-                    connect_clicked(sender) => move |_| {
+                    connect_clicked[sender] => move |_| {
                         sender.input(AppMsg::Refresh);
                     }
                 }
             },
-            &gtk::Box {
+            gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
-                &gtk::CenterBox {
+                gtk::CenterBox {
                     set_margin_all: 10,
                     set_orientation: gtk::Orientation::Horizontal,
                     set_hexpand: true,
@@ -127,20 +129,23 @@ impl SimpleComponent for App {
                         set_spacing: 10,
                         set_orientation: gtk::Orientation::Horizontal,
 
-                        &gtk::Image {
+                        gtk::Image {
                             set_from_file: Some(ItemType::Dir.icon_path()),
                             set_icon_size: gtk::IconSize::Large,
                         },
-                        &gtk::Label { set_label?: watch!(&model.data.explorer.dir().name()) },
+                        gtk::Label {
+                            #[watch]
+                            set_label?: &model.data.explorer.dir().name()
+                        },
                     },
                     set_end_widget = Some(&gtk::Button) {
                         set_icon_name: "document-open-symbolic",
-                        connect_clicked(sender) => move |_| {
+                        connect_clicked[sender] => move |_| {
                             //send!(input, AppMsg::Cmd(Command::ShowLogs));
                         },
                     }
                 },
-                &gtk::Paned {
+                gtk::Paned {
                     set_shrink_start_child: false,
                     set_shrink_end_child: false,
                     set_start_child = &gtk::ScrolledWindow {
@@ -160,9 +165,10 @@ impl SimpleComponent for App {
                         set_child = Some(&gtk::GridView) {
                             set_vexpand: true,
                             set_enable_rubberband: true,
-                            set_model: watch!(Some(&selection_model(model.data.explorer.items(), model.data.db.tags()))),
+                            #[watch]
+                            set_model: Some(&selection_model(model.data.explorer.items(), model.data.db.tags())),
                             set_factory: Some(&factory_identity()),
-                            connect_activate(sender) => move |_, index| {
+                            connect_activate[sender] => move |_, index| {
                                 sender.input(AppMsg::OpenAt(index as usize))
                             }
                         }
@@ -247,16 +253,9 @@ fn main() {
 /// A selection model for the file view.
 fn selection_model(items: &[Item], tags: &[Tag]) -> gtk::MultiSelection {
     let list_model = gtk::gio::ListStore::new(gtk::Box::static_type());
-    let mut items = items.to_vec();
-    // Order items by name, folders first
-    items.sort_by(|a, b| match (a.tp(), b.tp()) {
-        (ItemType::Dir, ItemType::Dir) => a.name().cmp(&b.name()),
-        (ItemType::Dir, _) => Ordering::Less,
-        (_, ItemType::Dir) => Ordering::Greater,
-        _ => a.name().cmp(&b.name()),
-    });
     for item in items {
         let tags = tags.to_vec();
+        let item_cloned = item.clone();
         view! {
             gtk_box = gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
@@ -275,7 +274,7 @@ fn selection_model(items: &[Item], tags: &[Tag]) -> gtk::MultiSelection {
                 connect_query_tooltip => move |_gtk_box, _x, _y, _keyboard, tooltip| -> bool {
                     let tag_labels = tags
                         .iter()
-                        .filter(|category| matches!(category.is(&item), Ok(true)))
+                        .filter(|category| matches!(category.is(&item_cloned), Ok(true)))
                         .map(|category| category.to_label())
                         .collect::<Vec<_>>();
 
@@ -283,7 +282,8 @@ fn selection_model(items: &[Item], tags: &[Tag]) -> gtk::MultiSelection {
                         tags = gtk::Box {
                             set_orientation: gtk::Orientation::Horizontal,
                             set_spacing: 10,
-                            append: iterate!(&tag_labels)
+                            #[iterate]
+                            append: &tag_labels,
                         }
                     }
                     tooltip.set_custom(Some(&tags));

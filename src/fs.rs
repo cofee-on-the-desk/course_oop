@@ -1,5 +1,8 @@
 use crate::lib::{InputWrapper, Item, ItemType};
-use std::path::{Path, PathBuf};
+use std::{
+    cmp::Ordering,
+    path::{Path, PathBuf},
+};
 
 pub struct Explorer {
     dir: Item,
@@ -125,8 +128,18 @@ impl NavigationHistory {
 }
 
 pub fn read_path(path: impl AsRef<Path>) -> anyhow::Result<Vec<Item>> {
-    Ok(std::fs::read_dir(path)?
+    let mut items = std::fs::read_dir(path)?
         .filter_map(|res| res.ok())
         .filter_map(|entry| Item::try_from(InputWrapper(entry.path())).ok())
-        .collect())
+        .collect::<Vec<_>>();
+
+    // Order items by name, folders first
+    items.sort_by(|a, b| match (a.tp(), b.tp()) {
+        (ItemType::Dir, ItemType::Dir) => a.name().cmp(&b.name()),
+        (ItemType::Dir, _) => Ordering::Less,
+        (_, ItemType::Dir) => Ordering::Greater,
+        _ => a.name().cmp(&b.name()),
+    });
+
+    Ok(items)
 }

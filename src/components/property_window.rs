@@ -15,7 +15,7 @@ pub struct PropertyWindow;
 impl SimpleComponent for PropertyWindow {
     type Widgets = PropertyWindowWidgets;
 
-    type InitParams = (Item, Vec<Tag>);
+    type InitParams = Item;
 
     type Input = ();
     type Output = ();
@@ -71,7 +71,6 @@ impl SimpleComponent for PropertyWindow {
                         set_orientation: gtk::Orientation::Horizontal,
                         set_hexpand: true,
                         set_selection_mode: gtk::SelectionMode::None,
-                        insert(i32::MAX): iterate!(tag_widgets.iter()),
                     }
                 },
             }
@@ -79,20 +78,11 @@ impl SimpleComponent for PropertyWindow {
     }
 
     fn init(
-        params: Self::InitParams,
+        mut item: Self::InitParams,
         root: &Self::Root,
         _sender: &ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let model = PropertyWindow;
-
-        let (mut item, tags) = params;
-
-        let tag_widgets: Vec<gtk::Label> = tags
-            .iter()
-            .filter(|tag| matches!(tag.is(&item), Ok(true)))
-            .map(|tag| tag.to_label())
-            .collect();
-
         let widgets = view_output!();
         root.present();
         ComponentParts { model, widgets }
