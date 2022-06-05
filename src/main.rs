@@ -1,4 +1,7 @@
 mod lib;
+use std::ops::Deref;
+use std::sync::Mutex;
+
 use lib::{Event, Item, ItemType, Rule, Tag, Var};
 
 mod db;
@@ -23,6 +26,7 @@ use relm4::{
 use serde::{Deserialize, Serialize};
 
 use gtk::prelude::{ButtonExt, GtkWindowExt, OrientableExt, WidgetExt};
+use utils::SENDER;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum AppMsg {
@@ -157,7 +161,7 @@ impl SimpleComponent for App {
                                 .get(model.data.explorer.dir().path())
                                 .unwrap_or(&Vec::new())
                                 .iter()
-                                .map(|rule| rule_view(rule, sender))
+                                .map(rule_view)
                                 .collect::<Vec<_>>()
                                 .iter()
                         }
@@ -189,7 +193,11 @@ impl SimpleComponent for App {
     }
 
     // Initialize the UI.
-    fn init(db: Self::InitParams, root: &Self::Root, sender: &AppSender) -> ComponentParts<Self> {
+    fn init(
+        db: Self::InitParams,
+        root: &Self::Root,
+        sender: &ComponentSender<App>,
+    ) -> ComponentParts<Self> {
         let data = AppData::new(db);
         let model = App {
             data,
@@ -198,10 +206,13 @@ impl SimpleComponent for App {
         };
 
         let widgets = view_output!();
+
+        SENDER.init(&sender.input);
+
         ComponentParts { model, widgets }
     }
 
-    fn update(&mut self, message: Self::Input, sender: &AppSender) {
+    fn update(&mut self, message: Self::Input, sender: &ComponentSender<App>) {
         let App {
             data,
             root,
@@ -247,7 +258,11 @@ fn main() {
 }
 
 /// A selection model for the file view.
-fn selection_model(items: &[Item], tags: &[Tag], sender: &AppSender) -> gtk::MultiSelection {
+fn selection_model(
+    items: &[Item],
+    tags: &[Tag],
+    sender: &ComponentSender<App>,
+) -> gtk::MultiSelection {
     let list_model = gtk::gio::ListStore::new(gtk::Box::static_type());
     for item in items {
         let tags = tags.to_vec();
@@ -271,7 +286,7 @@ fn selection_model(items: &[Item], tags: &[Tag], sender: &AppSender) -> gtk::Mul
                     let tag_labels = tags
                         .iter()
                         .filter(|tag| matches!(tag.is(&item_cloned), Ok(true)))
-                        .map(|tag| tag_view(tag, &sender))
+                        .map(tag_view)
                         .collect::<Vec<_>>();
 
                     view! {
@@ -307,11 +322,11 @@ fn factory_identity() -> gtk::SignalListItemFactory {
     factory
 }
 
-pub fn var_view(var: &Var, sender: &AppSender) -> impl IsA<gtk::Widget> {
+pub fn var_view(var: &Var) -> impl IsA<gtk::Widget> {
     let bin = adw::Bin::new();
     match var {
         Var::String(s) => bin.set_child(Some(&gtk::Label::new(Some(s)))),
-        Var::Tag(tag) => bin.set_child(Some(&tag_view(tag, sender))),
+        Var::Tag(tag) => bin.set_child(Some(&tag_view(tag))),
         Var::Path(path) => bin.set_child(Some(
             &gtk::Button::builder()
                 .label(&path.to_string_lossy())
@@ -323,7 +338,7 @@ pub fn var_view(var: &Var, sender: &AppSender) -> impl IsA<gtk::Widget> {
 }
 
 /// Create a single tag widget.
-pub fn tag_view(tag: &Tag, sender: &AppSender) -> impl IsA<gtk::Widget> {
+pub fn tag_view(tag: &Tag) -> impl IsA<gtk::Widget> {
     view! {
         label = gtk::Label {
             set_label: &tag.emoji_name(),
@@ -333,12 +348,8 @@ pub fn tag_view(tag: &Tag, sender: &AppSender) -> impl IsA<gtk::Widget> {
     label
 }
 
-pub fn event_view(event: &Event, sender: &AppSender) -> impl IsA<gtk::Widget> {
-    let vars = event
-        .vars()
-        .iter()
-        .map(|var| var_view(var, sender))
-        .collect::<Vec<_>>();
+pub fn event_view(event: &Event) -> impl IsA<gtk::Widget> {
+    let vars = event.vars().iter().map(var_view).collect::<Vec<_>>();
     view! {
         container = gtk::Box {
             set_margin_all: 5,
@@ -352,7 +363,7 @@ pub fn event_view(event: &Event, sender: &AppSender) -> impl IsA<gtk::Widget> {
 }
 
 /// Create a single row that describes a rule.
-pub fn rule_view(rule: &Rule, sender: &AppSender) -> impl IsA<gtk::Widget> {
+pub fn rule_view(rule: &Rule) -> impl IsA<gtk::Widget> {
     let row = adw::ExpanderRow::builder()
         .margin_top(5)
         .margin_bottom(5)
@@ -363,10 +374,8 @@ pub fn rule_view(rule: &Rule, sender: &AppSender) -> impl IsA<gtk::Widget> {
         .build();
 
     for event in rule.events() {
-        row.add_row(&event_view(event, sender));
+        row.add_row(&event_view(event));
     }
 
     row
 }
-
-type AppSender = ComponentSender<App>;
