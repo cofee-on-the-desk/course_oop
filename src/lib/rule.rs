@@ -80,4 +80,47 @@ impl Event {
             Event::Idle => "preferences-desktop-screensaver-symbolic",
         }
     }
+    pub fn vars(&self) -> Vec<Var> {
+        match &self {
+            Event::Copy {
+                tag,
+                target,
+                options,
+            } => {
+                let mut vars = vec![
+                    Var::String("Copy".into()),
+                    Var::Tag(tag.clone()),
+                    Var::String("to".into()),
+                    Var::Path(target.into()),
+                ];
+                if options.overwrite {
+                    vars.push(Var::String("(overwrite)".into()));
+                }
+                vars
+            }
+            Event::Move {
+                tag,
+                target,
+                options,
+            } => {
+                let mut vars = vec![
+                    Var::String("Move".into()),
+                    Var::Tag(tag.clone()),
+                    Var::String("to".into()),
+                    Var::Path(target.into()),
+                ];
+                if options.overwrite {
+                    vars.push(Var::String("(overwrite)".into()));
+                }
+                vars
+            }
+            Event::Idle => vec![Var::String("Idle".into())],
+        }
+    }
+}
+
+pub enum Var {
+    String(String),
+    Tag(Tag),
+    Path(PathBuf),
 }

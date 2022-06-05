@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-relm4 = { git = "https://github.com/Relm4/relm4", rev="144f48319ffd7a889f28853df00e802cfc97dc26", features = [ "macros" ] }
+relm4 = { git = "https://github.com/Relm4/relm4", rev="144f48319ffd7a889f28853df00e802cfc97dc26", features = [ "macros", "libadwaita" ] }
 home = "0.5"
 serde = { version = "1.0", features=["derive"] }
 bincode = "1.3.3"

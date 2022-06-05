@@ -1,9 +1,5 @@
 //! Tags represent a category of files that meet a certain criteria.
 use crate::lib::Item;
-use relm4::{
-    gtk::{self, prelude::WidgetExt},
-    view,
-};
 
 use serde::{Deserialize, Serialize};
 
@@ -106,16 +102,6 @@ impl Tag {
     }
     pub fn is(&self, entry: &Item) -> anyhow::Result<bool> {
         self.basis.is(entry)
-    }
-    pub fn to_label(&self) -> gtk::Label {
-        view! {
-            label = gtk::Label {
-                set_label: &self.emoji_name(),
-                set_tooltip_text?: Some(self.desc()),
-                add_css_class: "category",
-            }
-        }
-        label
     }
 }
 

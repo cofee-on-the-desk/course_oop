@@ -1,5 +1,5 @@
 mod lib;
-use lib::{Item, ItemType, Tag};
+use lib::{Event, Item, ItemType, Rule, Tag, Var};
 
 mod db;
 use db::Database;
@@ -13,16 +13,16 @@ use components::error_dialog::ErrorDialog;
 mod utils;
 use utils::Expect;
 
+use adw::prelude::{BinExt, ExpanderRowExt};
 use relm4::gtk::glib::FromVariant;
-use relm4::gtk::prelude::{BoxExt, Cast, StaticType, StaticVariantType, ToVariant};
+use relm4::gtk::prelude::{BoxExt, Cast, IsA, StaticType, StaticVariantType, ToVariant};
 use relm4::{
-    component, gtk, view, Component, ComponentParts, ComponentSender, RelmApp, Sender,
-    SimpleComponent, WidgetPlus,
+    adw, component, gtk, view, Component, ComponentParts, ComponentSender, RelmApp,
+    RelmRemoveAllExt, SimpleComponent, WidgetPlus,
 };
 use serde::{Deserialize, Serialize};
 
 use gtk::prelude::{ButtonExt, GtkWindowExt, OrientableExt, WidgetExt};
-use std::cmp::Ordering;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum AppMsg {
@@ -52,18 +52,6 @@ impl ToVariant for AppMsg {
     }
 }
 
-pub struct AppComponents {}
-
-impl AppComponents {
-    pub fn new(
-        _data: &AppData,
-        _window: &gtk::ApplicationWindow,
-        _sender: &Sender<AppMsg>,
-    ) -> Self {
-        AppComponents {}
-    }
-}
-
 pub struct AppData {
     pub explorer: Explorer,
     pub db: Database,
@@ -81,7 +69,6 @@ impl AppData {
 pub struct App {
     pub data: AppData,
     pub root: gtk::ApplicationWindow,
-    pub components: AppComponents,
     pub is_active: bool,
 }
 
@@ -149,13 +136,30 @@ impl SimpleComponent for App {
                     set_shrink_start_child: false,
                     set_shrink_end_child: false,
                     set_start_child = &gtk::ScrolledWindow {
+                        set_hscrollbar_policy: gtk::PolicyType::Never,
                         set_vexpand: true,
+                        set_margin_all: 5,
                         // Rules
                         set_child = Some(&gtk::ListBox) {
                             set_hexpand: true,
                             set_vexpand: true,
                             set_selection_mode: gtk::SelectionMode::Multiple,
                             set_activate_on_single_click: false,
+                            add_css_class: "boxed-list",
+                            #[watch]
+                            remove_all: (),
+                            #[watch]
+                            #[iterate]
+                            append: model
+                                .data
+                                .db
+                                .rules()
+                                .get(model.data.explorer.dir().path())
+                                .unwrap_or(&Vec::new())
+                                .iter()
+                                .map(|rule| rule_view(rule, sender))
+                                .collect::<Vec<_>>()
+                                .iter()
                         }
                     },
                     set_end_child = &gtk::ScrolledWindow {
@@ -166,7 +170,7 @@ impl SimpleComponent for App {
                             set_vexpand: true,
                             set_enable_rubberband: true,
                             #[watch]
-                            set_model: Some(&selection_model(model.data.explorer.items(), model.data.db.tags())),
+                            set_model: Some(&selection_model(model.data.explorer.items(), model.data.db.tags(), &sender)),
                             set_factory: Some(&factory_identity()),
                             connect_activate[sender] => move |_, index| {
                                 sender.input(AppMsg::OpenAt(index as usize))
@@ -185,18 +189,11 @@ impl SimpleComponent for App {
     }
 
     // Initialize the UI.
-    fn init(
-        db: Self::InitParams,
-        root: &Self::Root,
-        sender: &ComponentSender<Self>,
-    ) -> ComponentParts<Self> {
+    fn init(db: Self::InitParams, root: &Self::Root, sender: &AppSender) -> ComponentParts<Self> {
         let data = AppData::new(db);
-        let components = AppComponents::new(&data, root, &sender.input);
-
         let model = App {
             data,
             root: root.clone(),
-            components,
             is_active: true,
         };
 
@@ -204,11 +201,10 @@ impl SimpleComponent for App {
         ComponentParts { model, widgets }
     }
 
-    fn update(&mut self, message: Self::Input, sender: &ComponentSender<Self>) {
+    fn update(&mut self, message: Self::Input, sender: &AppSender) {
         let App {
             data,
             root,
-            components,
             is_active,
         } = self;
 
@@ -251,7 +247,7 @@ fn main() {
 }
 
 /// A selection model for the file view.
-fn selection_model(items: &[Item], tags: &[Tag]) -> gtk::MultiSelection {
+fn selection_model(items: &[Item], tags: &[Tag], sender: &AppSender) -> gtk::MultiSelection {
     let list_model = gtk::gio::ListStore::new(gtk::Box::static_type());
     for item in items {
         let tags = tags.to_vec();
@@ -271,11 +267,11 @@ fn selection_model(items: &[Item], tags: &[Tag]) -> gtk::MultiSelection {
                     set_label?: &item.name(),
                 },
                 set_has_tooltip: true,
-                connect_query_tooltip => move |_gtk_box, _x, _y, _keyboard, tooltip| -> bool {
+                connect_query_tooltip[sender] => move |_gtk_box, _x, _y, _keyboard, tooltip| -> bool {
                     let tag_labels = tags
                         .iter()
-                        .filter(|category| matches!(category.is(&item_cloned), Ok(true)))
-                        .map(|category| category.to_label())
+                        .filter(|tag| matches!(tag.is(&item_cloned), Ok(true)))
+                        .map(|tag| tag_view(tag, &sender))
                         .collect::<Vec<_>>();
 
                     view! {
@@ -310,3 +306,67 @@ fn factory_identity() -> gtk::SignalListItemFactory {
     });
     factory
 }
+
+pub fn var_view(var: &Var, sender: &AppSender) -> impl IsA<gtk::Widget> {
+    let bin = adw::Bin::new();
+    match var {
+        Var::String(s) => bin.set_child(Some(&gtk::Label::new(Some(s)))),
+        Var::Tag(tag) => bin.set_child(Some(&tag_view(tag, sender))),
+        Var::Path(path) => bin.set_child(Some(
+            &gtk::Button::builder()
+                .label(&path.to_string_lossy())
+                .css_classes(vec!["link".into()])
+                .build(),
+        )),
+    }
+    bin
+}
+
+/// Create a single tag widget.
+pub fn tag_view(tag: &Tag, sender: &AppSender) -> impl IsA<gtk::Widget> {
+    view! {
+        label = gtk::Label {
+            set_label: &tag.emoji_name(),
+            set_tooltip_text?: Some(tag.desc()),
+        }
+    }
+    label
+}
+
+pub fn event_view(event: &Event, sender: &AppSender) -> impl IsA<gtk::Widget> {
+    let vars = event
+        .vars()
+        .iter()
+        .map(|var| var_view(var, sender))
+        .collect::<Vec<_>>();
+    view! {
+        container = gtk::Box {
+            set_margin_all: 5,
+            set_spacing: 5,
+            gtk::Image { set_icon_name: Some(event.gtk_icon()) },
+            #[iterate]
+            append: vars.iter(),
+        }
+    }
+    container
+}
+
+/// Create a single row that describes a rule.
+pub fn rule_view(rule: &Rule, sender: &AppSender) -> impl IsA<gtk::Widget> {
+    let row = adw::ExpanderRow::builder()
+        .margin_top(5)
+        .margin_bottom(5)
+        .margin_start(5)
+        .margin_end(5)
+        .icon_name("starred-symbolic")
+        .title("Test Rule")
+        .build();
+
+    for event in rule.events() {
+        row.add_row(&event_view(event, sender));
+    }
+
+    row
+}
+
+type AppSender = ComponentSender<App>;

@@ -1,4 +1,4 @@
-use crate::lib::{common, Rule, Tag};
+use crate::lib::{common, CopyOptions, Event, MoveOptions, Rule, Tag};
 use std::{collections::HashMap, path::PathBuf};
 
 #[derive(Clone, Debug)]
@@ -34,7 +34,28 @@ impl Default for Database {
             common::empty(),
             common::never(),
         ];
-        let rules = HashMap::new();
+        let mut rules = HashMap::new();
+        rules.insert(
+            home::home_dir().unwrap(),
+            vec![
+                Rule::new(
+                    common::item(),
+                    vec![Event::Copy {
+                        tag: common::item(),
+                        target: "~/Images".into(),
+                        options: CopyOptions::default(),
+                    }],
+                ),
+                Rule::new(
+                    common::item(),
+                    vec![Event::Move {
+                        tag: common::item(),
+                        target: "~/Documents".into(),
+                        options: MoveOptions::default(),
+                    }],
+                ),
+            ],
+        );
         Database { tags, rules }
     }
 }
