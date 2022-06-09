@@ -1,6 +1,4 @@
 mod lib;
-use std::ops::Deref;
-use std::sync::Mutex;
 
 use lib::{Event, Item, ItemType, Rule, Tag, Var};
 
@@ -35,6 +33,7 @@ pub enum AppMsg {
     GoForward,
     OpenAt(usize),
     Refresh,
+    EditFileAt(usize),
     Quit,
 }
 
@@ -150,6 +149,10 @@ impl SimpleComponent for App {
                             set_selection_mode: gtk::SelectionMode::Multiple,
                             set_activate_on_single_click: false,
                             add_css_class: "boxed-list",
+                            // As a simple solution we just remove and reconstruct all the children
+                            // every time something in the model changes. This should not be an issue
+                            // because usually there is no more then a few rules for each directory.
+                            // This might get replaced with Relm4 factories in future.
                             #[watch]
                             remove_all: (),
                             #[watch]
@@ -161,7 +164,8 @@ impl SimpleComponent for App {
                                 .get(model.data.explorer.dir().path())
                                 .unwrap_or(&Vec::new())
                                 .iter()
-                                .map(rule_view)
+                                .enumerate()
+                                .map(|(index, rule)| rule_view(index, rule))
                                 .collect::<Vec<_>>()
                                 .iter()
                         }
@@ -247,6 +251,9 @@ impl SimpleComponent for App {
                 .refresh()
                 .or_show_error("Cannot refresh", sender),
             AppMsg::Quit => *is_active = false,
+            AppMsg::EditFileAt(index) => {
+                println!("{index}");
+            }
         }
     }
 }
@@ -363,15 +370,29 @@ pub fn event_view(event: &Event) -> impl IsA<gtk::Widget> {
 }
 
 /// Create a single row that describes a rule.
-pub fn rule_view(rule: &Rule) -> impl IsA<gtk::Widget> {
+pub fn rule_view(index: usize, rule: &Rule) -> impl IsA<gtk::Widget> {
     let row = adw::ExpanderRow::builder()
-        .margin_top(5)
-        .margin_bottom(5)
+        //.margin_top(5)
+        //.margin_bottom(5)
         .margin_start(5)
         .margin_end(5)
         .icon_name("starred-symbolic")
         .title("Test Rule")
         .build();
+
+    view! {
+        edit_button = gtk::Button {
+            set_margin_top: 10,
+            set_margin_bottom: 10,
+            set_css_classes: &["flat", "circular"],
+            set_icon_name: "document-edit-symbolic",
+            connect_clicked: move |_| {
+                SENDER.send(AppMsg::EditFileAt(index));
+            }
+        }
+    }
+
+    row.add_action(&edit_button);
 
     for event in rule.events() {
         row.add_row(&event_view(event));
