@@ -1,7 +1,9 @@
+use serde::{Deserialize, Serialize};
+
 use crate::lib::{common, CopyOptions, Event, MoveOptions, Rule, Tag};
 use std::{collections::HashMap, path::PathBuf};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Database {
     tags: Vec<Tag>,
     rules: HashMap<PathBuf, Vec<Rule>>,
@@ -22,6 +24,32 @@ impl Database {
     pub fn rules_mut(&mut self) -> &mut HashMap<PathBuf, Vec<Rule>> {
         &mut self.rules
     }
+
+    pub fn load() -> Self {
+        let mut path = dirs::config_dir().expect("Unable to find application config directory");
+        path.push("course_oop");
+        path.push("db.conf");
+        if !path.exists() {
+            return Database::default();
+        }
+        let bytes =
+            std::fs::read(&path).unwrap_or_else(|e| panic!("Unable to read file at {path:?}: {e}"));
+        serde_json::from_slice(&bytes).expect("Unable to deserialize database")
+    }
+
+    pub fn save(&self) {
+        let mut path = dirs::config_dir().expect("Unable to find application config directory");
+        path.push("course_oop");
+        if !path.exists() {
+            std::fs::create_dir(&path);
+        }
+        path.push("db.conf");
+        if !path.exists() {
+            std::fs::File::create(&path);
+        }
+        let bits = serde_json::to_vec(self).expect("Unable to serialize database");
+        std::fs::write(path, bits);
+    }
 }
 
 impl Default for Database {
@@ -34,28 +62,7 @@ impl Default for Database {
             common::empty(),
             common::never(),
         ];
-        let mut rules = HashMap::new();
-        rules.insert(
-            home::home_dir().unwrap(),
-            vec![
-                Rule::new(
-                    common::item(),
-                    vec![Event::Copy {
-                        tag: common::item(),
-                        target: "~/Images".into(),
-                        options: CopyOptions::default(),
-                    }],
-                ),
-                Rule::new(
-                    common::item(),
-                    vec![Event::Move {
-                        tag: common::item(),
-                        target: "~/Documents".into(),
-                        options: MoveOptions::default(),
-                    }],
-                ),
-            ],
-        );
+        let rules = HashMap::new();
         Database { tags, rules }
     }
 }
