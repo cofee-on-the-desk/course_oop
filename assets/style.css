@@ -1,1 +1,23 @@
+.tag {
+    border-radius: 25px;
+    background-color: rgba(154, 154, 154, 0.374);
+    padding-left: 5px;
+    padding-right: 5px;
+}
 
+.bold {
+    font-weight: bold;
+}
+
+.opaque {
+    opacity: 0.5;
+}
+
+.link {
+    padding-left: 0;
+    padding-right: 0;
+}
+
+.dark-bg {
+    background-color: #434343;
+}
