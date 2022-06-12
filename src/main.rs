@@ -1,5 +1,6 @@
 mod lib;
 
+use components::edit_rule_window::{EditMode, EditRuleOutput, EditRuleWindow};
 use lib::{Event, Item, ItemType, Rule, Tag, Var};
 
 mod db;
@@ -33,7 +34,12 @@ pub enum AppMsg {
     GoForward,
     OpenAt(usize),
     Refresh,
-    EditFileAt(usize),
+    NewRuleRequest,
+    NewRule(Rule),
+    EditRuleRequest(usize),
+    EditRule(usize, Rule),
+    DeleteRule(usize),
+    Ignore,
     Quit,
 }
 
@@ -67,6 +73,15 @@ impl AppData {
             db,
         }
     }
+    pub fn current_dir_rules(&self) -> Option<&[Rule]> {
+        self.db
+            .rules()
+            .get(self.explorer.dir().path())
+            .map(|v| v.as_slice())
+    }
+    pub fn current_dir_rules_mut(&mut self) -> Option<&mut Vec<Rule>> {
+        self.db.rules_mut().get_mut(self.explorer.dir().path())
+    }
 }
 
 pub struct App {
@@ -88,6 +103,10 @@ impl SimpleComponent for App {
         window = gtk::ApplicationWindow {
             set_default_width: 960,
             set_default_height: 640,
+            connect_close_request[sender] => move |_| {
+                sender.input(AppMsg::Quit);
+                gtk::Inhibit(true)
+            },
             set_titlebar = Some(&gtk::HeaderBar) {
                 pack_start = &gtk::Button::from_icon_name("go-previous") {
                     #[watch]
@@ -167,7 +186,9 @@ impl SimpleComponent for App {
                                 .enumerate()
                                 .map(|(index, rule)| rule_view(index, rule))
                                 .collect::<Vec<_>>()
-                                .iter()
+                                .iter(),
+                            #[watch]
+                            append: &add_rule_button(&sender.input),
                         }
                     },
                     set_end_child = &gtk::ScrolledWindow {
@@ -178,7 +199,7 @@ impl SimpleComponent for App {
                             set_vexpand: true,
                             set_enable_rubberband: true,
                             #[watch]
-                            set_model: Some(&selection_model(model.data.explorer.items(), model.data.db.tags(), &sender)),
+                            set_model: Some(&selection_model(model.data.explorer.items(), model.data.db.tags(), sender)),
                             set_factory: Some(&factory_identity()),
                             connect_activate[sender] => move |_, index| {
                                 sender.input(AppMsg::OpenAt(index as usize))
@@ -211,6 +232,8 @@ impl SimpleComponent for App {
 
         let widgets = view_output!();
 
+        // TODO: Use actions to send messages to components
+
         SENDER.init(&sender.input);
 
         ComponentParts { model, widgets }
@@ -236,6 +259,9 @@ impl SimpleComponent for App {
                     data.explorer
                         .open(path)
                         .or_show_error(&format!("Cannot open {:?}", path), sender);
+                } else if item.tp() == &ItemType::File {
+                    let path = item.path();
+                    open::that(path);
                 }
             }
             AppMsg::GoBack => data
@@ -250,10 +276,53 @@ impl SimpleComponent for App {
                 .explorer
                 .refresh()
                 .or_show_error("Cannot refresh", sender),
-            AppMsg::Quit => *is_active = false,
-            AppMsg::EditFileAt(index) => {
-                println!("{index}");
+            AppMsg::Quit => {
+                data.db.save();
+                *is_active = false;
             }
+            AppMsg::NewRuleRequest => {
+                let rule = Rule::default();
+                EditRuleWindow::builder()
+                    .transient_for(root)
+                    .launch((rule, EditMode::Create))
+                    .forward(&sender.input, move |output| match output {
+                        EditRuleOutput::Save(rule) => AppMsg::NewRule(rule),
+                        _ => AppMsg::Ignore,
+                    });
+            }
+            AppMsg::EditRuleRequest(index) => {
+                let rule = data
+                    .current_dir_rules()
+                    .unwrap()
+                    .get(index)
+                    .unwrap()
+                    .clone();
+                EditRuleWindow::builder()
+                    .transient_for(root)
+                    .launch((rule, EditMode::Edit))
+                    .forward(&sender.input, move |output| match output {
+                        EditRuleOutput::Save(rule) => AppMsg::EditRule(index, rule),
+                        EditRuleOutput::Cancel => AppMsg::Ignore,
+                        EditRuleOutput::Delete => AppMsg::DeleteRule(index),
+                    });
+            }
+            AppMsg::NewRule(rule) => data
+                .db
+                .rules_mut()
+                .entry(data.explorer.dir().path().to_owned())
+                .or_insert(vec![])
+                .push(rule),
+            AppMsg::EditRule(index, rule) => {
+                *data
+                    .current_dir_rules_mut()
+                    .unwrap()
+                    .get_mut(index)
+                    .unwrap() = rule;
+            }
+            AppMsg::DeleteRule(index) => {
+                data.current_dir_rules_mut().unwrap().remove(index);
+            }
+            AppMsg::Ignore => {}
         }
     }
 }
@@ -261,7 +330,7 @@ impl SimpleComponent for App {
 fn main() {
     let app: RelmApp<App> = RelmApp::new("cofee-on-the-desk.app.course_oop");
     relm4::set_global_css_from_file("assets/style.css");
-    app.run(Database::default());
+    app.run(Database::load());
 }
 
 /// A selection model for the file view.
@@ -332,7 +401,12 @@ fn factory_identity() -> gtk::SignalListItemFactory {
 pub fn var_view(var: &Var) -> impl IsA<gtk::Widget> {
     let bin = adw::Bin::new();
     match var {
-        Var::String(s) => bin.set_child(Some(&gtk::Label::new(Some(s)))),
+        Var::String { label, css_class } => bin.set_child(Some(
+            &gtk::Label::builder()
+                .label(label)
+                .css_classes(css_class.map_or_else(Vec::new, |class| vec![class.into()]))
+                .build(),
+        )),
         Var::Tag(tag) => bin.set_child(Some(&tag_view(tag))),
         Var::Path(path) => bin.set_child(Some(
             &gtk::Button::builder()
@@ -348,22 +422,36 @@ pub fn var_view(var: &Var) -> impl IsA<gtk::Widget> {
 pub fn tag_view(tag: &Tag) -> impl IsA<gtk::Widget> {
     view! {
         label = gtk::Label {
+            set_margin_top: 2,
+            set_margin_bottom: 2,
             set_label: &tag.emoji_name(),
             set_tooltip_text?: Some(tag.desc()),
+            add_css_class: "tag",
         }
     }
     label
 }
 
-pub fn event_view(event: &Event) -> impl IsA<gtk::Widget> {
+pub fn event_view(index: usize, event: &Event) -> impl IsA<gtk::Widget> {
     let vars = event.vars().iter().map(var_view).collect::<Vec<_>>();
     view! {
         container = gtk::Box {
+            set_orientation: gtk::Orientation::Horizontal,
             set_margin_all: 5,
-            set_spacing: 5,
-            gtk::Image { set_icon_name: Some(event.gtk_icon()) },
-            #[iterate]
-            append: vars.iter(),
+            set_spacing: 15,
+            gtk::Button {
+                set_sensitive: false,
+                set_margin_start: 5,
+                gtk::Label { set_markup: &format!("<b>{}</b>", index + 1) },
+                set_css_classes: &["circular", "dark-bg"]
+            },
+            gtk::Box {
+                set_orientation: gtk::Orientation::Horizontal,
+                set_spacing: 10,
+                gtk::Image { set_icon_name: Some(event.gtk_icon()), },
+                #[iterate]
+                append: vars.iter(),
+            }
         }
     }
     container
@@ -372,12 +460,10 @@ pub fn event_view(event: &Event) -> impl IsA<gtk::Widget> {
 /// Create a single row that describes a rule.
 pub fn rule_view(index: usize, rule: &Rule) -> impl IsA<gtk::Widget> {
     let row = adw::ExpanderRow::builder()
-        //.margin_top(5)
-        //.margin_bottom(5)
         .margin_start(5)
         .margin_end(5)
         .icon_name("starred-symbolic")
-        .title("Test Rule")
+        .title(rule.title())
         .build();
 
     view! {
@@ -387,16 +473,29 @@ pub fn rule_view(index: usize, rule: &Rule) -> impl IsA<gtk::Widget> {
             set_css_classes: &["flat", "circular"],
             set_icon_name: "document-edit-symbolic",
             connect_clicked: move |_| {
-                SENDER.send(AppMsg::EditFileAt(index));
+                SENDER.send(AppMsg::EditRuleRequest(index));
             }
         }
     }
 
     row.add_action(&edit_button);
 
-    for event in rule.events() {
-        row.add_row(&event_view(event));
+    for (index, event) in rule.events().iter().enumerate() {
+        row.add_row(&event_view(index, event));
     }
 
     row
+}
+
+fn add_rule_button(sender: &relm4::Sender<AppMsg>) -> gtk::Button {
+    view! {
+            button = gtk::Button {
+            set_icon_name: "list-add-symbolic",
+            set_hexpand: true,
+            connect_clicked[sender] => move |_| {
+                sender.send(AppMsg::NewRuleRequest)
+            }
+        }
+    }
+    button
 }

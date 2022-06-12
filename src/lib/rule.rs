@@ -1,22 +1,49 @@
 //! Data structures and utilities related to the rule system.
-use crate::lib::tag::Tag;
+use crate::lib::tag::{common, Tag};
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Rule {
+    title: String,
     condition: Tag,
     events: Vec<Event>,
 }
 
+impl Default for Rule {
+    fn default() -> Self {
+        Rule {
+            title: "New Rule".into(),
+            condition: Tag::default(),
+            events: Vec::new(),
+        }
+    }
+}
+
 impl Rule {
     pub fn new(condition: Tag, events: Vec<Event>) -> Self {
-        Rule { condition, events }
+        Rule {
+            title: "New Rule".into(),
+            condition,
+            events,
+        }
     }
     pub fn condition(&self) -> &Tag {
         &self.condition
     }
     pub fn events(&self) -> &[Event] {
         &self.events[..]
+    }
+    pub fn condition_mut(&mut self) -> &mut Tag {
+        &mut self.condition
+    }
+    pub fn events_mut(&mut self) -> &mut Vec<Event> {
+        &mut self.events
+    }
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+    pub fn title_mut(&mut self) -> &mut String {
+        &mut self.title
     }
 }
 
@@ -88,13 +115,22 @@ impl Event {
                 options,
             } => {
                 let mut vars = vec![
-                    Var::String("Copy".into()),
+                    Var::String {
+                        label: "Copy".into(),
+                        css_class: Some("bold"),
+                    },
                     Var::Tag(tag.clone()),
-                    Var::String("to".into()),
+                    Var::String {
+                        label: "to".into(),
+                        css_class: Some("opaque"),
+                    },
                     Var::Path(target.into()),
                 ];
                 if options.overwrite {
-                    vars.push(Var::String("(overwrite)".into()));
+                    vars.push(Var::String {
+                        label: "(overwrite)".into(),
+                        css_class: Some("opaque"),
+                    });
                 }
                 vars
             }
@@ -104,23 +140,82 @@ impl Event {
                 options,
             } => {
                 let mut vars = vec![
-                    Var::String("Move".into()),
+                    Var::String {
+                        label: "Move".into(),
+                        css_class: Some("bold"),
+                    },
                     Var::Tag(tag.clone()),
-                    Var::String("to".into()),
+                    Var::String {
+                        label: "to".into(),
+                        css_class: Some("opaque"),
+                    },
                     Var::Path(target.into()),
                 ];
                 if options.overwrite {
-                    vars.push(Var::String("(overwrite)".into()));
+                    vars.push(Var::String {
+                        label: "(overwrite)".into(),
+                        css_class: Some("opaque"),
+                    });
                 }
                 vars
             }
-            Event::Idle => vec![Var::String("Idle".into())],
+            Event::Idle => vec![Var::String {
+                label: "Idle".into(),
+                css_class: Some("bold"),
+            }],
+        }
+    }
+    pub fn copy() -> Self {
+        Event::Copy {
+            tag: common::never(),
+            target: home::home_dir().unwrap(),
+            options: CopyOptions { overwrite: false },
+        }
+    }
+    pub fn mv() -> Self {
+        Event::Move {
+            tag: common::never(),
+            target: home::home_dir().unwrap(),
+            options: MoveOptions { overwrite: false },
+        }
+    }
+    pub fn set_path(&mut self, p: PathBuf) {
+        match self {
+            Event::Copy {
+                tag,
+                target,
+                options,
+            } => *target = p,
+            Event::Move {
+                tag,
+                target,
+                options,
+            } => *target = p,
+            Event::Idle => {}
+        }
+    }
+    pub fn set_tag(&mut self, t: Tag) {
+        match self {
+            Event::Copy {
+                tag,
+                target,
+                options,
+            } => *tag = t,
+            Event::Move {
+                tag,
+                target,
+                options,
+            } => *tag = t,
+            Event::Idle => {}
         }
     }
 }
 
 pub enum Var {
-    String(String),
+    String {
+        label: String,
+        css_class: Option<&'static str>,
+    },
     Tag(Tag),
     Path(PathBuf),
 }

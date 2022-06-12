@@ -119,8 +119,7 @@ pub mod common {
         TagBuilder::new("File", Basis::Type(ItemType::File))
             .emoji("📄")
             .desc(
-                "An object that contains data. The data can be in plain text, or, for \
-            example, in binary.",
+                "An object that contains data. The data can be represented in plain text or encoded in any format.",
             )
             .build()
     }
@@ -145,7 +144,13 @@ pub mod common {
     pub fn never() -> Tag {
         TagBuilder::new("Never", Basis::Bool(false))
             .emoji("🌑")
-            .desc(".")
+            .desc(
+                "A never tag means an empty set, so there is no such file \nthat can fit this tag. Can be used for testing purposes.",
+            )
             .build()
+    }
+
+    pub fn all() -> Vec<Tag> {
+        vec![folder(), file(), link(), empty(), item(), never()]
     }
 }
