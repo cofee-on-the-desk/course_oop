@@ -14,8 +14,7 @@ use relm4::{
     view, ComponentParts, ComponentSender, RelmRemoveAllExt, Sender, SimpleComponent, WidgetPlus,
 };
 
-use crate::lib::common;
-use crate::lib::{Event, Rule, Tag, Var};
+use crate::lib::{all_tags, Event, Rule, Tag, Var};
 use crate::utils::Bind;
 
 #[derive(Debug)]
@@ -282,8 +281,8 @@ pub fn var_view(index: usize, var: &Var, sender: &Sender<EditRuleInput>) -> impl
                 button = gtk::MenuButton {
                     set_margin_top: 12,
                     set_margin_bottom: 12,
-                    set_label: &tag.emoji_name(),
-                    set_tooltip_text?: Some(tag.desc()),
+                    set_label: &tag.name(),
+                    set_tooltip_text: Some(tag.desc()),
                     set_popover: popover = Some(&gtk::Popover) {
                         gtk::Box {
                             set_orientation: gtk::Orientation::Horizontal,
@@ -291,16 +290,16 @@ pub fn var_view(index: usize, var: &Var, sender: &Sender<EditRuleInput>) -> impl
                             set_margin_end: 10,
                             set_spacing: 15,
                             #[iterate]
-                            append: common::all().into_iter().map(|t| {
+                            append: all_tags().iter().map(|t| {
                                 view! {
                                     widget = gtk::Button {
                                         set_margin_top: 12,
                                         set_margin_bottom: 12,
-                                        set_label: &t.emoji_name(),
-                                        set_tooltip_text?: Some(t.desc()),
+                                        set_label: &t.name(),
+                                        set_tooltip_text: Some(t.desc()),
                                         add_css_class: "tag",
-                                        set_sensitive: &t != tag,
-                                        add_css_class?: (&t == tag).then(|| "opaque"),
+                                        set_sensitive: t != tag,
+                                        add_css_class?: (t == tag).then(|| "opaque"),
                                         connect_clicked[sender, t, popover] => move |_| {
                                             popover.hide();
                                             sender.send(EditRuleInput::ChangedTag(index, t.clone()));

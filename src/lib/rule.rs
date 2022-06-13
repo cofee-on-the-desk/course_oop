@@ -1,11 +1,10 @@
 //! Data structures and utilities related to the rule system.
-use crate::lib::tag::{common, Tag};
+use crate::{fs::read_path, lib::tag::Tag, log::LogEntry};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Rule {
     title: String,
-    condition: Tag,
     events: Vec<Event>,
 }
 
@@ -13,7 +12,6 @@ impl Default for Rule {
     fn default() -> Self {
         Rule {
             title: "New Rule".into(),
-            condition: Tag::default(),
             events: Vec::new(),
         }
     }
@@ -23,18 +21,11 @@ impl Rule {
     pub fn new(condition: Tag, events: Vec<Event>) -> Self {
         Rule {
             title: "New Rule".into(),
-            condition,
             events,
         }
     }
-    pub fn condition(&self) -> &Tag {
-        &self.condition
-    }
     pub fn events(&self) -> &[Event] {
         &self.events[..]
-    }
-    pub fn condition_mut(&mut self) -> &mut Tag {
-        &mut self.condition
     }
     pub fn events_mut(&mut self) -> &mut Vec<Event> {
         &mut self.events
@@ -47,7 +38,7 @@ impl Rule {
     }
 }
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CopyOptions {
@@ -167,14 +158,14 @@ impl Event {
     }
     pub fn copy() -> Self {
         Event::Copy {
-            tag: common::never(),
+            tag: Tag::default(),
             target: home::home_dir().unwrap(),
             options: CopyOptions { overwrite: false },
         }
     }
     pub fn mv() -> Self {
         Event::Move {
-            tag: common::never(),
+            tag: Tag::default(),
             target: home::home_dir().unwrap(),
             options: MoveOptions { overwrite: false },
         }
@@ -209,6 +200,41 @@ impl Event {
             Event::Idle => {}
         }
     }
+    pub fn execute(
+        &self,
+        path: impl AsRef<Path>,
+    ) -> anyhow::Result<Vec<SkippableResult<LogEntry>>> {
+        match self {
+            Event::Copy {
+                tag,
+                target,
+                options,
+            } => {
+                let files = read_path(path)?
+                    .into_iter()
+                    .filter(|item| if let Ok(is) = tag.is(item) { is } else { false })
+                    .map(|item| item.path().to_owned())
+                    .collect::<Vec<_>>();
+                let results = copy(&files, target, options)
+                    .into_iter()
+                    .map(|result| match result {
+                        SkippableResult::Ok(file) => {
+                            SkippableResult::Ok(LogEntry::new(self, target, file))
+                        }
+                        SkippableResult::Skipped => SkippableResult::Skipped,
+                        SkippableResult::Err(e) => SkippableResult::Err(e),
+                    })
+                    .collect::<Vec<_>>();
+                Ok(results)
+            }
+            Event::Move {
+                tag,
+                target,
+                options,
+            } => todo!(),
+            Event::Idle => todo!(),
+        }
+    }
 }
 
 pub enum Var {
@@ -218,4 +244,58 @@ pub enum Var {
     },
     Tag(Tag),
     Path(PathBuf),
+}
+
+fn copy(
+    // Files to copy
+    files: &[impl AsRef<Path>],
+    // Folder to copy files into
+    to: impl AsRef<Path>,
+    options: &CopyOptions,
+) -> Vec<SkippableResult<PathBuf>> {
+    files
+        .iter()
+        .map(|file| {
+            let path = file.as_ref();
+
+            if let Some(file_name) = path.file_name() {
+                let mut to = to.as_ref().to_owned();
+                to.push(file_name);
+                if !options.overwrite && to.exists() {
+                    SkippableResult::Skipped
+                } else {
+                    let options = fs_extra::dir::CopyOptions::new();
+                    match fs_extra::copy_items(&[path], to, &options) {
+                        Ok(_) => SkippableResult::Ok(path.to_owned()),
+                        Err(e) => SkippableResult::Err(e.into()),
+                    }
+                }
+            } else {
+                SkippableResult::Err(anyhow::anyhow!("File at path {path:?} has no file name"))
+            }
+        })
+        .collect()
+}
+
+fn mv(
+    path: impl AsRef<Path>,
+    target: impl AsRef<Path>,
+    options: &MoveOptions,
+) -> anyhow::Result<LogEntry> {
+    todo!()
+}
+
+pub enum SkippableResult<T> {
+    Ok(T),
+    Skipped,
+    Err(anyhow::Error),
+}
+
+impl<T, E: std::error::Error + Send + Sync + 'static> From<Result<T, E>> for SkippableResult<T> {
+    fn from(result: Result<T, E>) -> Self {
+        match result {
+            Ok(val) => SkippableResult::Ok(val),
+            Err(e) => SkippableResult::Err(e.into()),
+        }
+    }
 }

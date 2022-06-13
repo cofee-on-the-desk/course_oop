@@ -1,20 +1,23 @@
 use serde::{Deserialize, Serialize};
 
-use crate::lib::{common, CopyOptions, Event, MoveOptions, Rule, Tag};
-use std::{collections::HashMap, path::PathBuf};
+use crate::{
+    lib::{CopyOptions, Event, MoveOptions, Rule, Tag},
+    log::Log,
+};
+use std::{
+    collections::HashMap,
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
+// TODO: don't actually serialize the whole struct, but use different fields separately, in different files
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Database {
-    tags: Vec<Tag>,
     rules: HashMap<PathBuf, Vec<Rule>>,
+    log: Arc<Mutex<Log>>,
 }
 
 impl Database {
-    /// Get a reference to the database tags.
-    pub fn tags(&self) -> &[Tag] {
-        &self.tags
-    }
-
     /// Get a reference to the database rules.
     pub fn rules(&self) -> &HashMap<PathBuf, Vec<Rule>> {
         &self.rules
@@ -50,19 +53,16 @@ impl Database {
         let bits = serde_json::to_vec(self).expect("Unable to serialize database");
         std::fs::write(path, bits);
     }
+
+    pub fn log(&self) -> &Arc<Mutex<Log>> {
+        &self.log
+    }
 }
 
 impl Default for Database {
     fn default() -> Self {
-        let tags = vec![
-            common::file(),
-            common::folder(),
-            common::link(),
-            common::item(),
-            common::empty(),
-            common::never(),
-        ];
         let rules = HashMap::new();
-        Database { tags, rules }
+        let log = Arc::new(Mutex::new(Log::default()));
+        Database { rules, log }
     }
 }

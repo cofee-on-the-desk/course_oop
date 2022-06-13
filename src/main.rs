@@ -1,6 +1,8 @@
 mod lib;
 
 use components::edit_rule_window::{EditMode, EditRuleOutput, EditRuleWindow};
+use components::executor::Executor;
+use components::log_window::LogWindow;
 use lib::{Event, Item, ItemType, Rule, Tag, Var};
 
 mod db;
@@ -11,6 +13,8 @@ use fs::Explorer;
 
 mod components;
 use components::error_dialog::ErrorDialog;
+
+pub mod log;
 
 mod utils;
 use utils::Expect;
@@ -27,6 +31,8 @@ use serde::{Deserialize, Serialize};
 use gtk::prelude::{ButtonExt, GtkWindowExt, OrientableExt, WidgetExt};
 use utils::SENDER;
 
+use crate::lib::all_tags;
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum AppMsg {
     Error(String, String),
@@ -39,6 +45,7 @@ pub enum AppMsg {
     EditRuleRequest(usize),
     EditRule(usize, Rule),
     DeleteRule(usize),
+    ShowLog,
     Ignore,
     Quit,
 }
@@ -86,6 +93,7 @@ impl AppData {
 
 pub struct App {
     pub data: AppData,
+    pub executor: Executor,
     pub root: gtk::ApplicationWindow,
     pub is_active: bool,
 }
@@ -122,39 +130,34 @@ impl SimpleComponent for App {
                         sender.input(AppMsg::GoForward);
                     }
                 },
-                pack_end = &gtk::Button::from_icon_name("view-refresh") {
+                pack_start = &gtk::Box {
+                    set_margin_start: 5,
+                    set_spacing: 10,
+                    set_orientation: gtk::Orientation::Horizontal,
+                    gtk::Image {
+                        set_from_file: Some(ItemType::Dir.icon_path()),
+                        set_icon_size: gtk::IconSize::Large,
+                    },
+                    gtk::Label {
+                        #[watch]
+                        set_markup?: &model.data.explorer.dir().name().map(|name| format!("<b>{name}</b>")),
+                    },
+                },
+                pack_end = &gtk::Button {
+                    set_icon_name: "accessories-text-editor-symbolic",
+                    connect_clicked[sender] => move |_| {
+                        sender.input(AppMsg::ShowLog);
+                    },
+                },
+                pack_end = &gtk::Button {
+                    set_icon_name: "view-refresh",
                     connect_clicked[sender] => move |_| {
                         sender.input(AppMsg::Refresh);
                     }
                 }
             },
-            gtk::Box {
-                set_orientation: gtk::Orientation::Vertical,
-                gtk::CenterBox {
-                    set_margin_all: 10,
-                    set_orientation: gtk::Orientation::Horizontal,
-                    set_hexpand: true,
-                    set_start_widget = Some(&gtk::Box) {
-                        set_spacing: 10,
-                        set_orientation: gtk::Orientation::Horizontal,
 
-                        gtk::Image {
-                            set_from_file: Some(ItemType::Dir.icon_path()),
-                            set_icon_size: gtk::IconSize::Large,
-                        },
-                        gtk::Label {
-                            #[watch]
-                            set_label?: &model.data.explorer.dir().name()
-                        },
-                    },
-                    set_end_widget = Some(&gtk::Button) {
-                        set_icon_name: "document-open-symbolic",
-                        connect_clicked[sender] => move |_| {
-                            //send!(input, AppMsg::Cmd(Command::ShowLogs));
-                        },
-                    }
-                },
-                gtk::Paned {
+            gtk::Paned {
                     set_shrink_start_child: false,
                     set_shrink_end_child: false,
                     set_start_child = &gtk::ScrolledWindow {
@@ -199,15 +202,14 @@ impl SimpleComponent for App {
                             set_vexpand: true,
                             set_enable_rubberband: true,
                             #[watch]
-                            set_model: Some(&selection_model(model.data.explorer.items(), model.data.db.tags(), sender)),
+                            set_model: Some(&selection_model(model.data.explorer.items(), sender)),
                             set_factory: Some(&factory_identity()),
                             connect_activate[sender] => move |_, index| {
                                 sender.input(AppMsg::OpenAt(index as usize))
                             }
                         }
                     }
-                },
-            }
+                }
         }
     }
 
@@ -224,7 +226,8 @@ impl SimpleComponent for App {
         sender: &ComponentSender<App>,
     ) -> ComponentParts<Self> {
         let data = AppData::new(db);
-        let model = App {
+        let mut model = App {
+            executor: Executor::new(data.db.log()),
             data,
             root: root.clone(),
             is_active: true,
@@ -235,6 +238,7 @@ impl SimpleComponent for App {
         // TODO: Use actions to send messages to components
 
         SENDER.init(&sender.input);
+        model.executor.restart(model.data.db.rules());
 
         ComponentParts { model, widgets }
     }
@@ -242,6 +246,7 @@ impl SimpleComponent for App {
     fn update(&mut self, message: Self::Input, sender: &ComponentSender<App>) {
         let App {
             data,
+            executor,
             root,
             is_active,
         } = self;
@@ -261,7 +266,7 @@ impl SimpleComponent for App {
                         .or_show_error(&format!("Cannot open {:?}", path), sender);
                 } else if item.tp() == &ItemType::File {
                     let path = item.path();
-                    open::that(path);
+                    open::that(path).unwrap_or_else(|_| panic!("Can't open file at path {path:?}"));
                 }
             }
             AppMsg::GoBack => data
@@ -306,21 +311,30 @@ impl SimpleComponent for App {
                         EditRuleOutput::Delete => AppMsg::DeleteRule(index),
                     });
             }
-            AppMsg::NewRule(rule) => data
-                .db
-                .rules_mut()
-                .entry(data.explorer.dir().path().to_owned())
-                .or_insert(vec![])
-                .push(rule),
+            AppMsg::NewRule(rule) => {
+                data.db
+                    .rules_mut()
+                    .entry(data.explorer.dir().path().to_owned())
+                    .or_insert(vec![])
+                    .push(rule);
+                executor.restart(data.db.rules());
+            }
             AppMsg::EditRule(index, rule) => {
                 *data
                     .current_dir_rules_mut()
                     .unwrap()
                     .get_mut(index)
                     .unwrap() = rule;
+                executor.restart(data.db.rules());
             }
             AppMsg::DeleteRule(index) => {
                 data.current_dir_rules_mut().unwrap().remove(index);
+                executor.restart(data.db.rules());
+            }
+            AppMsg::ShowLog => {
+                LogWindow::builder()
+                    .transient_for(root)
+                    .launch(data.db.log().clone());
             }
             AppMsg::Ignore => {}
         }
@@ -334,14 +348,10 @@ fn main() {
 }
 
 /// A selection model for the file view.
-fn selection_model(
-    items: &[Item],
-    tags: &[Tag],
-    sender: &ComponentSender<App>,
-) -> gtk::MultiSelection {
+fn selection_model(items: &[Item], sender: &ComponentSender<App>) -> gtk::MultiSelection {
     let list_model = gtk::gio::ListStore::new(gtk::Box::static_type());
     for item in items {
-        let tags = tags.to_vec();
+        let tags = all_tags();
         let item_cloned = item.clone();
         view! {
             gtk_box = gtk::Box {
@@ -424,8 +434,8 @@ pub fn tag_view(tag: &Tag) -> impl IsA<gtk::Widget> {
         label = gtk::Label {
             set_margin_top: 2,
             set_margin_bottom: 2,
-            set_label: &tag.emoji_name(),
-            set_tooltip_text?: Some(tag.desc()),
+            set_label: tag.name(),
+            set_tooltip_text: Some(tag.desc()),
             add_css_class: "tag",
         }
     }

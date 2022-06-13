@@ -5,30 +5,6 @@ use serde::{Deserialize, Serialize};
 
 use super::ItemType;
 
-pub struct TagBuilder(Tag);
-
-impl TagBuilder {
-    pub fn new(name: &'static str, basis: Basis) -> Self {
-        TagBuilder(Tag {
-            name: name.to_string(),
-            emoji: None,
-            desc: None,
-            basis,
-        })
-    }
-    pub fn emoji(mut self, emoji: &'static str) -> Self {
-        self.0.emoji = Some(emoji.to_string());
-        self
-    }
-    pub fn desc(mut self, desc: &'static str) -> Self {
-        self.0.desc = Some(desc.to_string());
-        self
-    }
-    pub fn build(self) -> Tag {
-        self.0
-    }
-}
-
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
 pub enum Basis {
     Bool(bool),
@@ -72,17 +48,44 @@ impl Basis {
     }
 }
 
+/*
+enum Tag {
+    File,
+    Directory,
+    DirectoryEmpty,
+    DirectoryFilesLessThen,
+    Symlink,
+    LessThen1MB,
+    LessThen100MB,
+    LessThen1GB,
+    LessThen10GB,
+    Image,
+    Video,
+    Audio,
+    Document,
+    Book,
+    TextDocument,
+    Presentation,
+    Table,
+    Office,
+    Archive,
+    And(Box<Tag>, Box<Tag>),
+    Not(Box<Tag>),
+}
+*/
+
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
 pub struct Tag {
     name: String,
-    emoji: Option<String>,
-    desc: Option<String>,
+    desc: String,
     basis: Basis,
 }
 
 impl Default for Tag {
     fn default() -> Self {
-        common::empty()
+        Tag { name: "🧱 Dummy".into(), basis: Basis::Name("dummy.test".into()),
+    desc: "An object with the name 'dummy.text'. Used as the placeholder inside event, usually you would want to replace it with another useful tag.".into()
+}
     }
 }
 
@@ -90,67 +93,27 @@ impl Tag {
     pub fn name(&self) -> &str {
         &self.name
     }
-    pub fn emoji_name(&self) -> String {
-        if let Some(emoji) = &self.emoji {
-            format!("{} {}", emoji, self.name)
-        } else {
-            self.name.clone()
-        }
-    }
-    pub fn desc(&self) -> Option<&str> {
-        self.desc.as_deref()
+    pub fn desc(&self) -> &str {
+        &self.desc
     }
     pub fn is(&self, entry: &Item) -> anyhow::Result<bool> {
         self.basis.is(entry)
     }
 }
 
-pub mod common {
-    use super::{Basis, Tag, TagBuilder};
-    use crate::lib::ItemType;
-
-    pub fn folder() -> Tag {
-        TagBuilder::new("Folder", Basis::Type(ItemType::Dir))
-            .emoji("📁")
-            .desc("An object that contains other files.")
-            .build()
-    }
-    pub fn file() -> Tag {
-        TagBuilder::new("File", Basis::Type(ItemType::File))
-            .emoji("📄")
-            .desc(
-                "An object that contains data. The data can be represented in plain text or encoded in any format.",
-            )
-            .build()
-    }
-    pub fn link() -> Tag {
-        TagBuilder::new("Symlink", Basis::Type(ItemType::Symlink))
-            .emoji("🔗")
-            .desc("An object that points to another object.")
-            .build()
-    }
-    pub fn empty() -> Tag {
-        TagBuilder::new("Empty", Basis::ChildrenCount(0))
-            .emoji("🐚")
-            .desc("An empty folder.")
-            .build()
-    }
-    pub fn item() -> Tag {
-        TagBuilder::new("Item", Basis::Bool(true))
-            .emoji("📦")
-            .desc("A folder, file or a symlink.")
-            .build()
-    }
-    pub fn never() -> Tag {
-        TagBuilder::new("Never", Basis::Bool(false))
-            .emoji("🌑")
-            .desc(
-                "A never tag means an empty set, so there is no such file \nthat can fit this tag. Can be used for testing purposes.",
-            )
-            .build()
-    }
-
-    pub fn all() -> Vec<Tag> {
-        vec![folder(), file(), link(), empty(), item(), never()]
-    }
+pub fn all_tags() -> Vec<Tag> {
+    vec![
+    Tag { name: "🧱 Dummy".into(), basis: Basis::Name("dummy.test".into()),
+    desc: "An object with the name 'dummy.test'. Used as the placeholder inside event, usually you would want to replace it with another useful tag.".into()},
+    Tag { name: "📁 Folder".into(), basis: Basis::Type(ItemType::Dir), desc: "An object that contains other files.".into(), },
+            Tag { name: "📄 File".into(), basis: Basis::Type(ItemType::File)
+            , desc: "An object that contains data. The data can be represented in plain text or encoded in any format.".into(),
+            },
+            Tag { name: "🐚 Empty".into(), basis: Basis::ChildrenCount(0)
+            , desc: "An empty folder.".into()
+               },
+               Tag { name: "📦 Item".into(), basis: Basis::Bool(true),
+               desc: "A folder, file or a symlink.".into()
+               }
+    ]
 }
