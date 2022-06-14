@@ -79,23 +79,10 @@ impl Item {
             Ok(bytes)
         }
     }
-}
-
-/// Wrapper over a path variable.
-///
-/// Required for the `TryFrom` implementation of `Item`.
-pub struct InputWrapper<P: AsRef<Path>>(pub P);
-
-impl<P> TryFrom<InputWrapper<P>> for Item
-where
-    P: AsRef<Path>,
-{
-    type Error = anyhow::Error;
-    fn try_from(path: InputWrapper<P>) -> anyhow::Result<Self> {
-        let path = path.0;
-        let metadata = std::fs::symlink_metadata(&path)?;
+    pub fn try_from_path(path: &Path) -> anyhow::Result<Self> {
+        let metadata = std::fs::symlink_metadata(path)?;
         let tp = ItemType::try_from(metadata.file_type()).expect("Unknown file type.");
-        let path = path.as_ref().to_owned();
+        let path = path.to_owned();
         Ok(Item {
             path,
             tp,

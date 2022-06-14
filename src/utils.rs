@@ -1,5 +1,5 @@
-use crate::{App, AppMsg};
-use relm4::{ComponentSender, Sender};
+use crate::AppMsg;
+use relm4::Sender;
 use std::sync::Mutex;
 
 /// Allows using functions (closures) as methods.
@@ -13,17 +13,17 @@ pub trait Bind {
 
 impl<T> Bind for T {}
 
-/// An extension for the `anyhow::Result<()>`.
+/// Extension for `anyhow::Result<()>`.
 ///
 /// If the underlying value is `Err`, shows an error dialog.
 pub trait Expect {
-    fn or_show_error(self, description: &str, sender: &ComponentSender<App>);
+    fn or_show_error(self, desc: &str);
 }
 
 impl Expect for anyhow::Result<()> {
-    fn or_show_error(self, description: &str, sender: &ComponentSender<App>) {
+    fn or_show_error(self, desc: &str) {
         if let Err(e) = self {
-            sender.input(AppMsg::Error(description.to_string(), e.to_string()));
+            SENDER.send(AppMsg::Error(desc.to_string(), e.to_string()));
         }
     }
 }

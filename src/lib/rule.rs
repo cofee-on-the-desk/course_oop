@@ -40,15 +40,17 @@ impl Rule {
 
 use std::path::{Path, PathBuf};
 
+use super::TagExpr;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Event {
     Copy {
-        tag: Tag,
+        expr: TagExpr,
         target: PathBuf,
         overwrite: bool,
     },
     Move {
-        tag: Tag,
+        expr: TagExpr,
         target: PathBuf,
         overwrite: bool,
     },
@@ -79,7 +81,7 @@ impl Event {
     pub fn vars(&self) -> Vec<Var> {
         match &self {
             Event::Copy {
-                tag,
+                expr,
                 target,
                 overwrite,
             } => {
@@ -88,7 +90,7 @@ impl Event {
                         label: "Copy".into(),
                         css_class: Some("bold"),
                     },
-                    Var::Tag(tag.clone()),
+                    Var::TagExpr(expr.clone()),
                     Var::String {
                         label: "to".into(),
                         css_class: Some("opaque"),
@@ -104,7 +106,7 @@ impl Event {
                 vars
             }
             Event::Move {
-                tag,
+                expr,
                 target,
                 overwrite,
             } => {
@@ -113,7 +115,7 @@ impl Event {
                         label: "Move".into(),
                         css_class: Some("bold"),
                     },
-                    Var::Tag(tag.clone()),
+                    Var::TagExpr(expr.clone()),
                     Var::String {
                         label: "to".into(),
                         css_class: Some("opaque"),
@@ -136,14 +138,14 @@ impl Event {
     }
     pub fn copy() -> Self {
         Event::Copy {
-            tag: Tag::default(),
+            expr: TagExpr::default(),
             target: home::home_dir().unwrap(),
             overwrite: false,
         }
     }
     pub fn mv() -> Self {
         Event::Move {
-            tag: Tag::default(),
+            expr: TagExpr::default(),
             target: home::home_dir().unwrap(),
             overwrite: false,
         }
@@ -155,11 +157,18 @@ impl Event {
             Event::Idle => {}
         }
     }
-    pub fn set_tag(&mut self, t: Tag) {
+    pub fn tag_expr(&self) -> &TagExpr {
         match self {
-            Event::Copy { tag, .. } => *tag = t,
-            Event::Move { tag, .. } => *tag = t,
-            Event::Idle => {}
+            Event::Copy { expr, .. } => expr,
+            Event::Move { expr, .. } => expr,
+            Event::Idle => unimplemented!(),
+        }
+    }
+    pub fn tag_expr_mut(&mut self) -> &mut TagExpr {
+        match self {
+            Event::Copy { expr, .. } => expr,
+            Event::Move { expr, .. } => expr,
+            Event::Idle => unimplemented!(),
         }
     }
     pub fn execute(
@@ -168,13 +177,19 @@ impl Event {
     ) -> anyhow::Result<Vec<SkippableResult<LogEntry>>> {
         match self {
             Event::Copy {
-                tag,
+                expr,
                 target,
                 overwrite,
             } => {
                 let files = read_path(path)?
                     .into_iter()
-                    .filter(|item| if let Ok(is) = tag.is(item) { is } else { false })
+                    .filter(|item| {
+                        if let Ok(is) = expr.is(item.path()) {
+                            is
+                        } else {
+                            false
+                        }
+                    })
                     .map(|item| item.path().to_owned())
                     .collect::<Vec<_>>();
                 let results = copy(&files, target, *overwrite)
@@ -190,7 +205,7 @@ impl Event {
                 Ok(results)
             }
             Event::Move {
-                tag,
+                expr,
                 target,
                 overwrite,
             } => todo!(),
@@ -204,7 +219,7 @@ pub enum Var {
         label: String,
         css_class: Option<&'static str>,
     },
-    Tag(Tag),
+    TagExpr(TagExpr),
     Path(PathBuf),
 }
 

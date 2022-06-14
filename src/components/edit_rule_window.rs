@@ -1,5 +1,8 @@
 //! A window for adding and editing rules.
-use std::path::PathBuf;
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
 use gtk::prelude::{
     BoxExt, ButtonExt, EditableExt, EntryBufferExtManual, EntryExt, GtkWindowExt, OrientableExt,
@@ -14,7 +17,7 @@ use relm4::{
     view, ComponentParts, ComponentSender, RelmRemoveAllExt, Sender, SimpleComponent, WidgetPlus,
 };
 
-use crate::lib::{all_tags, Event, Rule, Tag, Var};
+use crate::lib::{all_tags, Event, Rule, Tag, TagExpr, Var};
 use crate::utils::Bind;
 
 #[derive(Debug)]
@@ -22,6 +25,8 @@ pub struct EditRuleWindow {
     mode: EditMode,
     root: gtk::Window,
     rule: Rule,
+    tag_select_multiple: Arc<Mutex<bool>>,
+    tag_negate: Arc<Mutex<bool>>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -37,7 +42,8 @@ pub enum EditRuleInput {
     RemoveEventAt(usize),
     AddEventCopy,
     AddEventMove,
-    ChangedTag(usize, Tag),
+    ClickedTag(usize, Tag),
+    ResetTag(usize),
     ChangedPath(usize, PathBuf),
 }
 
@@ -126,7 +132,7 @@ impl SimpleComponent for EditRuleWindow {
                             .events()
                             .iter()
                             .enumerate()
-                            .map(|(index, rule)| row_view(index, rule, &sender.input))
+                            .map(|(index, rule)| row_view(index, rule, &sender.input, model.tag_select_multiple.clone(), model.tag_negate.clone()))
                             .collect::<Vec<_>>()
                             .iter(),
                         },
@@ -150,7 +156,7 @@ impl SimpleComponent for EditRuleWindow {
                         }
                     }
                 }
-            }
+            },
         }
     }
 
@@ -163,6 +169,8 @@ impl SimpleComponent for EditRuleWindow {
             rule,
             root: root.clone(),
             mode,
+            tag_select_multiple: Arc::new(Mutex::new(false)),
+            tag_negate: Arc::new(Mutex::new(false)),
         };
         let widgets = view_output!();
         widgets.root.present();
@@ -197,18 +205,49 @@ impl SimpleComponent for EditRuleWindow {
                     event.set_path(path);
                 }
             }
-            EditRuleInput::ChangedTag(index, tag) => {
+            EditRuleInput::ClickedTag(index, tag) => {
                 if let Some(event) = self.rule.events_mut().get_mut(index) {
-                    event.set_tag(tag);
+                    let mut tag_select_multiple = self.tag_select_multiple.lock().unwrap();
+                    let mut tag_negate = self.tag_negate.lock().unwrap();
+                    if event.tag_expr().has(&tag) {
+                        event.tag_expr_mut().remove(&tag);
+                    } else if *tag_select_multiple {
+                        event.tag_expr_mut().push(tag, !*tag_negate);
+                    } else {
+                        *event.tag_expr_mut() = TagExpr::new(tag, !*tag_negate);
+                    }
+                    *tag_select_multiple = false;
+                    *tag_negate = false;
+                }
+            }
+            EditRuleInput::ResetTag(index) => {
+                if let Some(event) = self.rule.events_mut().get_mut(index) {
+                    let mut tag_select_multiple = self.tag_select_multiple.lock().unwrap();
+                    let mut tag_negate = self.tag_negate.lock().unwrap();
+                    *tag_select_multiple = false;
+                    *tag_negate = false;
+                    *event.tag_expr_mut() = TagExpr::default();
                 }
             }
         }
     }
 }
 
-fn row_view(index: usize, event: &Event, sender: &Sender<EditRuleInput>) -> impl IsA<gtk::Widget> {
+fn row_view(
+    index: usize,
+    event: &Event,
+    sender: &Sender<EditRuleInput>,
+    tag_select_multiple: Arc<Mutex<bool>>,
+    tag_negate: Arc<Mutex<bool>>,
+) -> impl IsA<gtk::Widget> {
     let row = adw::ActionRow::new();
-    row.add_prefix(&event_view(index, event, sender));
+    row.add_prefix(&event_view(
+        index,
+        event,
+        sender,
+        tag_select_multiple,
+        tag_negate,
+    ));
 
     view! {
         remove_button = gtk::Button {
@@ -230,11 +269,21 @@ fn event_view(
     index: usize,
     event: &Event,
     sender: &Sender<EditRuleInput>,
+    tag_select_multiple: Arc<Mutex<bool>>,
+    tag_negate: Arc<Mutex<bool>>,
 ) -> impl IsA<gtk::Widget> {
     let vars = event
         .vars()
         .iter()
-        .map(|event| var_view(index, event, sender))
+        .map(|event| {
+            var_view(
+                index,
+                event,
+                sender,
+                tag_select_multiple.clone(),
+                tag_negate.clone(),
+            )
+        })
         .collect::<Vec<_>>();
     view! {
         container = gtk::Box {
@@ -267,7 +316,13 @@ fn icon_label_button(label: &str, icon: &str) -> gtk::Button {
     button
 }
 
-pub fn var_view(index: usize, var: &Var, sender: &Sender<EditRuleInput>) -> impl IsA<gtk::Widget> {
+pub fn var_view(
+    index: usize,
+    var: &Var,
+    sender: &Sender<EditRuleInput>,
+    tag_select_multiple: Arc<Mutex<bool>>,
+    tag_negate: Arc<Mutex<bool>>,
+) -> impl IsA<gtk::Widget> {
     let bin = adw::Bin::new();
     match var {
         Var::String { label, css_class } => bin.set_child(Some(
@@ -276,38 +331,84 @@ pub fn var_view(index: usize, var: &Var, sender: &Sender<EditRuleInput>) -> impl
                 .css_classes(css_class.map_or_else(Vec::new, |class| vec![class.into()]))
                 .build(),
         )),
-        Var::Tag(tag) => bin.set_child(Some(&{
+        Var::TagExpr(expr) => bin.set_child(Some(&{
             view! {
                 button = gtk::MenuButton {
                     set_margin_top: 12,
                     set_margin_bottom: 12,
-                    set_label: tag.name(),
-                    set_tooltip_text: Some(tag.desc()),
+                    set_label: &expr.name(),
+                    set_tooltip_text: Some(&expr.desc()),
                     set_popover: popover = Some(&gtk::Popover) {
-                        gtk::Box {
-                            set_orientation: gtk::Orientation::Horizontal,
-                            set_margin_start: 10,
-                            set_margin_end: 10,
-                            set_spacing: 15,
-                            #[iterate]
-                            append: all_tags().iter().map(|t| {
-                                view! {
-                                    widget = gtk::Button {
-                                        set_margin_top: 12,
-                                        set_margin_bottom: 12,
-                                        set_label: t.name(),
-                                        set_tooltip_text: Some(t.desc()),
-                                        add_css_class: "tag",
-                                        set_sensitive: t != tag,
-                                        add_css_class?: (t == tag).then(|| "opaque"),
-                                        connect_clicked[sender, t, popover] => move |_| {
+                        gtk::Box { set_orientation: gtk::Orientation::Vertical,
+                            set_spacing: 10,
+                            gtk::Box {
+                                set_orientation: gtk::Orientation::Horizontal,
+                                set_margin_start: 10,
+                                set_margin_end: 10,
+                                set_spacing: 15,
+                                #[iterate]
+                                append: all_tags().iter().map(|tag| {
+                                    view! {
+                                        widget = gtk::Button {
+                                            set_margin_top: 12,
+                                            set_margin_bottom: 12,
+                                            set_label: tag.name(),
+                                            set_tooltip_text: Some(tag.desc()),
+                                            add_css_class: "tag",
+                                            add_css_class?: expr.has(tag).then(|| "opaque"),
+                                            connect_clicked[sender, tag, popover] => move |_| {
+                                                popover.hide();
+                                                sender.send(EditRuleInput::ClickedTag(index, tag.clone()));
+                                            }
+                                        }
+                                    }
+                                    widget
+                                }).collect::<Vec<_>>().iter(),
+                            },
+                            gtk::CenterBox {
+                                set_margin_all: 10,
+                                set_start_widget = Some(&gtk::Box) {
+                                    set_orientation: gtk::Orientation::Vertical,
+                                    set_spacing: 10,
+                                    gtk::Label { set_markup: "Use <b>Shift</b> to select multiple tags.", set_xalign: 0.  },
+                                    gtk::Label { set_markup: "Use <b>Ctrl</b> to exclude a tag from the set.", set_xalign: 0. },
+                                },
+                                set_end_widget = Some(&gtk::Box) {
+                                    gtk::Button {
+                                        set_icon_name: "view-refresh",
+                                        set_css_classes: &["circular", "flat"],
+                                        connect_clicked[sender, popover] => move |_| {
                                             popover.hide();
-                                            sender.send(EditRuleInput::ChangedTag(index, t.clone()));
+                                            sender.send(EditRuleInput::ResetTag(index));
                                         }
                                     }
                                 }
-                                widget
-                            }).collect::<Vec<_>>().iter(),
+                            }
+                        },
+                        add_controller = &gtk::EventControllerKey {
+                            connect_key_pressed[tag_select_multiple, tag_negate] => move |_, key, _, _| {
+                                if key == gtk::gdk::Key::Shift_L || key == gtk::gdk::Key::Shift_R {
+                                    if let Ok(mut b) = tag_select_multiple.lock() {
+                                        *b = true;
+                                    }
+                                } else if key == gtk::gdk::Key::Control_L || key == gtk::gdk::Key::Control_R {
+                                    if let Ok(mut b) = tag_negate.lock() {
+                                        *b = true;
+                                    }
+                                }
+                                gtk::Inhibit(false)
+                            },
+                            connect_key_released[tag_select_multiple, tag_negate] => move |_, key, _, _| {
+                                if key == gtk::gdk::Key::Shift_L || key == gtk::gdk::Key::Shift_R {
+                                    if let Ok(mut b) = tag_select_multiple.lock() {
+                                        *b = false;
+                                    }
+                                } else if key == gtk::gdk::Key::KP_Space {
+                                    if let Ok(mut b) = tag_negate.lock() {
+                                        *b = false;
+                                    }
+                                }
+                            }
                         }
                     }
                 }

@@ -7,6 +7,9 @@ use std::path::{Path, PathBuf};
 pub struct Log(Vec<LogEntry>);
 
 impl Log {
+    pub fn new() -> Self {
+        Log(Vec::new())
+    }
     pub fn push(&mut self, entry: LogEntry) {
         self.0.push(entry);
     }

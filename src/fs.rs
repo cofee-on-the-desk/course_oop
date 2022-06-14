@@ -1,4 +1,4 @@
-use crate::lib::{InputWrapper, Item, ItemType};
+use crate::lib::{Item, ItemType};
 use std::{
     cmp::Ordering,
     path::{Path, PathBuf},
@@ -48,7 +48,7 @@ impl Explorer {
     fn update(&mut self, path: impl AsRef<Path>, update_history: bool) -> anyhow::Result<()> {
         let path = path.as_ref();
 
-        let dir = Item::try_from(InputWrapper(path))?;
+        let dir = Item::try_from_path(path)?;
         let items = read_path(path)?;
 
         if update_history {
@@ -64,9 +64,11 @@ impl Explorer {
 
 impl Default for Explorer {
     fn default() -> Self {
-        let dir = Item::try_from(InputWrapper(
-            home::home_dir().expect("Unable to find user home directory."),
-        ))
+        let dir = Item::try_from_path(
+            home::home_dir()
+                .expect("Unable to find user home directory.")
+                .as_path(),
+        )
         .expect("Unable to create read the user home directory.");
 
         assert_eq!(dir.tp(), &ItemType::Dir);
@@ -130,7 +132,7 @@ impl NavigationHistory {
 pub fn read_path(path: impl AsRef<Path>) -> anyhow::Result<Vec<Item>> {
     let mut items = std::fs::read_dir(path)?
         .filter_map(|res| res.ok())
-        .filter_map(|entry| Item::try_from(InputWrapper(entry.path())).ok())
+        .filter_map(|entry| Item::try_from_path(entry.path().as_path()).ok())
         .collect::<Vec<_>>();
 
     // Order items by name, folders first

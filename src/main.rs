@@ -3,7 +3,7 @@ mod lib;
 use components::edit_rule_window::{EditMode, EditRuleOutput, EditRuleWindow};
 use components::executor::Executor;
 use components::log_window::LogWindow;
-use lib::{Event, Item, ItemType, Rule, Tag, Var};
+use lib::{Event, Item, ItemType, Rule, Tag, TagExpr, Var};
 
 mod db;
 use db::Database;
@@ -202,7 +202,7 @@ impl SimpleComponent for App {
                             set_vexpand: true,
                             set_enable_rubberband: true,
                             #[watch]
-                            set_model: Some(&selection_model(model.data.explorer.items(), sender)),
+                            set_model: Some(&selection_model(model.data.explorer.items())),
                             set_factory: Some(&factory_identity()),
                             connect_activate[sender] => move |_, index| {
                                 sender.input(AppMsg::OpenAt(index as usize))
@@ -263,26 +263,22 @@ impl SimpleComponent for App {
                     let path = item.path();
                     data.explorer
                         .open(path)
-                        .or_show_error(&format!("Cannot open {:?}", path), sender);
+                        .or_show_error(&format!("Cannot open {:?}", path));
                 } else if item.tp() == &ItemType::File {
                     let path = item.path();
                     open::that(path).unwrap_or_else(|_| panic!("Can't open file at path {path:?}"));
                 }
             }
-            AppMsg::GoBack => data
-                .explorer
-                .go_back()
-                .or_show_error("Cannot go back", sender),
+            AppMsg::GoBack => data.explorer.go_back().or_show_error("Cannot go back"),
             AppMsg::GoForward => data
                 .explorer
                 .go_forward()
-                .or_show_error("Cannot go forward", sender),
-            AppMsg::Refresh => data
-                .explorer
-                .refresh()
-                .or_show_error("Cannot refresh", sender),
+                .or_show_error("Cannot go forward"),
+            AppMsg::Refresh => data.explorer.refresh().or_show_error("Cannot refresh"),
             AppMsg::Quit => {
-                data.db.save();
+                data.db
+                    .save()
+                    .or_show_error("An error has occured while trying to save the database");
                 *is_active = false;
             }
             AppMsg::NewRuleRequest => {
@@ -344,15 +340,19 @@ impl SimpleComponent for App {
 fn main() {
     let app: RelmApp<App> = RelmApp::new("cofee-on-the-desk.app.course_oop");
     relm4::set_global_css_from_file("assets/style.css");
-    app.run(Database::load());
+    let db = Database::load();
+    match db {
+        Ok(db) => app.run(db),
+        Err(e) => eprintln!("An error has occured when trying to load the database files: {e}"),
+    }
 }
 
 /// A selection model for the file view.
-fn selection_model(items: &[Item], sender: &ComponentSender<App>) -> gtk::MultiSelection {
+fn selection_model(items: &[Item]) -> gtk::MultiSelection {
     let list_model = gtk::gio::ListStore::new(gtk::Box::static_type());
     for item in items {
         let tags = all_tags();
-        let item_cloned = item.clone();
+        let path = item.path().to_owned();
         view! {
             gtk_box = gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
@@ -368,10 +368,10 @@ fn selection_model(items: &[Item], sender: &ComponentSender<App>) -> gtk::MultiS
                     set_label?: &item.name(),
                 },
                 set_has_tooltip: true,
-                connect_query_tooltip[sender] => move |_gtk_box, _x, _y, _keyboard, tooltip| -> bool {
+                connect_query_tooltip => move |_gtk_box, _x, _y, _keyboard, tooltip| -> bool {
                     let tag_labels = tags
                         .iter()
-                        .filter(|tag| matches!(tag.is(&item_cloned), Ok(true)))
+                        .filter(|tag| matches!(tag.is(&path), Ok(true)))
                         .map(tag_view)
                         .collect::<Vec<_>>();
 
@@ -416,7 +416,7 @@ pub fn var_view(var: &Var) -> impl IsA<gtk::Widget> {
                 .css_classes(css_class.map_or_else(Vec::new, |class| vec![class.into()]))
                 .build(),
         )),
-        Var::Tag(tag) => bin.set_child(Some(&tag_view(tag))),
+        Var::TagExpr(tag_expr) => bin.set_child(Some(&tag_expr_view(tag_expr))),
         Var::Path(path) => bin.set_child(Some(
             &gtk::Button::builder()
                 .label(&path.to_string_lossy())
@@ -435,6 +435,20 @@ pub fn tag_view(tag: &Tag) -> impl IsA<gtk::Widget> {
             set_margin_bottom: 2,
             set_label: tag.name(),
             set_tooltip_text: Some(tag.desc()),
+            add_css_class: "tag",
+        }
+    }
+    label
+}
+
+/// Create a single tag widget.
+pub fn tag_expr_view(tag: &TagExpr) -> impl IsA<gtk::Widget> {
+    view! {
+        label = gtk::Label {
+            set_margin_top: 2,
+            set_margin_bottom: 2,
+            set_label: &tag.name(),
+            set_tooltip_text: Some(&tag.desc()),
             add_css_class: "tag",
         }
     }

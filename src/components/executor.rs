@@ -42,6 +42,7 @@ impl Executor {
                 for (dir, rules) in rule_map.iter() {
                     for rule in rules {
                         for event in rule.events() {
+                            println!();
                             match event.execute(dir) {
                                 Ok(results) => {
                                     let mut log = log.lock().expect("unable to aquire mutex");
