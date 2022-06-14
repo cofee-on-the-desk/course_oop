@@ -41,38 +41,16 @@ impl Rule {
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct CopyOptions {
-    pub overwrite: bool,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct MoveOptions {
-    pub overwrite: bool,
-}
-
-impl Default for CopyOptions {
-    fn default() -> Self {
-        CopyOptions { overwrite: false }
-    }
-}
-
-impl Default for MoveOptions {
-    fn default() -> Self {
-        MoveOptions { overwrite: false }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Event {
     Copy {
         tag: Tag,
         target: PathBuf,
-        options: CopyOptions,
+        overwrite: bool,
     },
     Move {
         tag: Tag,
         target: PathBuf,
-        options: MoveOptions,
+        overwrite: bool,
     },
     Idle,
 }
@@ -103,7 +81,7 @@ impl Event {
             Event::Copy {
                 tag,
                 target,
-                options,
+                overwrite,
             } => {
                 let mut vars = vec![
                     Var::String {
@@ -117,7 +95,7 @@ impl Event {
                     },
                     Var::Path(target.into()),
                 ];
-                if options.overwrite {
+                if *overwrite {
                     vars.push(Var::String {
                         label: "(overwrite)".into(),
                         css_class: Some("opaque"),
@@ -128,7 +106,7 @@ impl Event {
             Event::Move {
                 tag,
                 target,
-                options,
+                overwrite,
             } => {
                 let mut vars = vec![
                     Var::String {
@@ -142,7 +120,7 @@ impl Event {
                     },
                     Var::Path(target.into()),
                 ];
-                if options.overwrite {
+                if *overwrite {
                     vars.push(Var::String {
                         label: "(overwrite)".into(),
                         css_class: Some("opaque"),
@@ -160,43 +138,27 @@ impl Event {
         Event::Copy {
             tag: Tag::default(),
             target: home::home_dir().unwrap(),
-            options: CopyOptions { overwrite: false },
+            overwrite: false,
         }
     }
     pub fn mv() -> Self {
         Event::Move {
             tag: Tag::default(),
             target: home::home_dir().unwrap(),
-            options: MoveOptions { overwrite: false },
+            overwrite: false,
         }
     }
     pub fn set_path(&mut self, p: PathBuf) {
         match self {
-            Event::Copy {
-                tag,
-                target,
-                options,
-            } => *target = p,
-            Event::Move {
-                tag,
-                target,
-                options,
-            } => *target = p,
+            Event::Copy { target, .. } => *target = p,
+            Event::Move { target, .. } => *target = p,
             Event::Idle => {}
         }
     }
     pub fn set_tag(&mut self, t: Tag) {
         match self {
-            Event::Copy {
-                tag,
-                target,
-                options,
-            } => *tag = t,
-            Event::Move {
-                tag,
-                target,
-                options,
-            } => *tag = t,
+            Event::Copy { tag, .. } => *tag = t,
+            Event::Move { tag, .. } => *tag = t,
             Event::Idle => {}
         }
     }
@@ -208,14 +170,14 @@ impl Event {
             Event::Copy {
                 tag,
                 target,
-                options,
+                overwrite,
             } => {
                 let files = read_path(path)?
                     .into_iter()
                     .filter(|item| if let Ok(is) = tag.is(item) { is } else { false })
                     .map(|item| item.path().to_owned())
                     .collect::<Vec<_>>();
-                let results = copy(&files, target, options)
+                let results = copy(&files, target, *overwrite)
                     .into_iter()
                     .map(|result| match result {
                         SkippableResult::Ok(file) => {
@@ -230,7 +192,7 @@ impl Event {
             Event::Move {
                 tag,
                 target,
-                options,
+                overwrite,
             } => todo!(),
             Event::Idle => todo!(),
         }
@@ -251,7 +213,7 @@ fn copy(
     files: &[impl AsRef<Path>],
     // Folder to copy files into
     to: impl AsRef<Path>,
-    options: &CopyOptions,
+    overwrite: bool,
 ) -> Vec<SkippableResult<PathBuf>> {
     files
         .iter()
@@ -261,7 +223,7 @@ fn copy(
             if let Some(file_name) = path.file_name() {
                 let mut to = to.as_ref().to_owned();
                 to.push(file_name);
-                if !options.overwrite && to.exists() {
+                if !overwrite && to.exists() {
                     SkippableResult::Skipped
                 } else {
                     let options = fs_extra::dir::CopyOptions::new();
@@ -280,7 +242,7 @@ fn copy(
 fn mv(
     path: impl AsRef<Path>,
     target: impl AsRef<Path>,
-    options: &MoveOptions,
+    overwrite: bool,
 ) -> anyhow::Result<LogEntry> {
     todo!()
 }

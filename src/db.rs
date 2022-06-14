@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    lib::{CopyOptions, Event, MoveOptions, Rule, Tag},
+    lib::{Event, Rule, Tag},
     log::Log,
 };
 use std::{
