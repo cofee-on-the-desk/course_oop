@@ -390,8 +390,7 @@ fn selection_model(items: &[Item], sender: &ComponentSender<App>) -> gtk::MultiS
         }
         list_model.append(&gtk_box);
     }
-    let selection_model = gtk::MultiSelection::new(Some(&list_model));
-    selection_model
+    gtk::MultiSelection::new(Some(&list_model))
 }
 
 /// A factory that produces an exact copy of its input.

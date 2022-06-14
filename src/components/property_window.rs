@@ -7,7 +7,7 @@ use relm4::{
     ComponentParts, ComponentSender, SimpleComponent, WidgetPlus,
 };
 
-use crate::lib::{Item, Tag};
+use crate::lib::Item;
 
 pub struct PropertyWindow;
 
@@ -59,7 +59,7 @@ impl SimpleComponent for PropertyWindow {
                     gtk::Label {
                         set_label: &item.size()
                             .map(|bytes| bytes.get_appropriate_unit(true).to_string())
-                            .unwrap_or(String::from("(unknown)"))
+                            .unwrap_or_else(|_| String::from("(unknown)"))
                     }
                 },
                 gtk::Separator {},

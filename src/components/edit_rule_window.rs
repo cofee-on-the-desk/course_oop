@@ -281,7 +281,7 @@ pub fn var_view(index: usize, var: &Var, sender: &Sender<EditRuleInput>) -> impl
                 button = gtk::MenuButton {
                     set_margin_top: 12,
                     set_margin_bottom: 12,
-                    set_label: &tag.name(),
+                    set_label: tag.name(),
                     set_tooltip_text: Some(tag.desc()),
                     set_popover: popover = Some(&gtk::Popover) {
                         gtk::Box {
@@ -295,7 +295,7 @@ pub fn var_view(index: usize, var: &Var, sender: &Sender<EditRuleInput>) -> impl
                                     widget = gtk::Button {
                                         set_margin_top: 12,
                                         set_margin_bottom: 12,
-                                        set_label: &t.name(),
+                                        set_label: t.name(),
                                         set_tooltip_text: Some(t.desc()),
                                         add_css_class: "tag",
                                         set_sensitive: t != tag,

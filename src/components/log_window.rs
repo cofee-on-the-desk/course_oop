@@ -1,28 +1,15 @@
 //! A window for adding and editing rules.
-use std::{
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
-use gtk::prelude::{
-    BoxExt, ButtonExt, EditableExt, EntryBufferExtManual, EntryExt, GtkWindowExt, OrientableExt,
-    WidgetExt,
-};
+use gtk::prelude::{BoxExt, GtkWindowExt, OrientableExt, WidgetExt};
 use relm4::{
-    adw::{
-        self,
-        traits::{ActionRowExt, BinExt},
-    },
+    adw,
     gtk::{self, prelude::IsA},
     view, ComponentParts, ComponentSender, RelmRemoveAllExt, Sender, SimpleComponent, WidgetPlus,
 };
 
 use crate::log::Log;
-use crate::utils::Bind;
-use crate::{
-    lib::{Event, Rule, Tag, Var},
-    log::LogEntry,
-};
+use crate::log::LogEntry;
 
 #[derive(Debug)]
 pub struct LogWindow {
@@ -32,11 +19,7 @@ pub struct LogWindow {
 pub enum LogWindowInput {}
 
 #[derive(Debug)]
-pub enum LogWindowOutput {
-    Save(Rule),
-    Cancel,
-    Delete,
-}
+pub enum LogWindowOutput {}
 
 #[relm4::component(pub)]
 impl SimpleComponent for LogWindow {

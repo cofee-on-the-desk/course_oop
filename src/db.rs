@@ -1,9 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    lib::{Event, Rule, Tag},
-    log::Log,
-};
+use crate::{lib::Rule, log::Log};
 use std::{
     collections::HashMap,
     path::PathBuf,

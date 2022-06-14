@@ -1,26 +1,12 @@
-use std::thread::{self, JoinHandle};
-use std::time::Duration;
 use std::{
     collections::HashMap,
     path::PathBuf,
     sync::{
-        mpsc::{channel, Receiver, Sender},
+        mpsc::{channel, Sender},
         Arc, Mutex,
     },
-};
-
-use gtk::prelude::{
-    BoxExt, ButtonExt, EditableExt, EntryBufferExtManual, EntryExt, GtkWindowExt, OrientableExt,
-    WidgetExt,
-};
-use relm4::Component;
-use relm4::{
-    adw::{
-        self,
-        traits::{ActionRowExt, BinExt},
-    },
-    gtk::{self, prelude::IsA},
-    view, ComponentParts, ComponentSender, RelmRemoveAllExt, SimpleComponent, WidgetPlus,
+    thread,
+    time::Duration,
 };
 
 use crate::lib::SkippableResult;
