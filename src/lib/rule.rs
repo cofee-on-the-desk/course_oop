@@ -202,6 +202,7 @@ impl Event {
                         SkippableResult::Err(e) => SkippableResult::Err(e),
                     })
                     .collect::<Vec<_>>();
+
                 Ok(results)
             }
             Event::Move {
@@ -230,25 +231,27 @@ fn copy(
     to: impl AsRef<Path>,
     overwrite: bool,
 ) -> Vec<SkippableResult<PathBuf>> {
+    let to = to.as_ref();
     files
         .iter()
         .map(|file| {
             let path = file.as_ref();
-
             if let Some(file_name) = path.file_name() {
-                let mut to = to.as_ref().to_owned();
-                to.push(file_name);
-                if !overwrite && to.exists() {
-                    SkippableResult::Skipped
-                } else {
-                    let options = fs_extra::dir::CopyOptions::new();
-                    match fs_extra::copy_items(&[path], to, &options) {
-                        Ok(_) => SkippableResult::Ok(path.to_owned()),
-                        Err(e) => SkippableResult::Err(e.into()),
+                if to.is_dir() {
+                    if !overwrite && to.join(file_name).exists() {
+                        SkippableResult::Skipped
+                    } else {
+                        let options = fs_extra::dir::CopyOptions::new();
+                        match fs_extra::copy_items(dbg!(&[path]), dbg!(to), &options) {
+                            Ok(_) => SkippableResult::Ok(path.to_owned()),
+                            Err(e) => SkippableResult::Err(e.into()),
+                        }
                     }
+                } else {
+                    SkippableResult::Err(anyhow::anyhow!("{path:?} is not a directory"))
                 }
             } else {
-                SkippableResult::Err(anyhow::anyhow!("File at path {path:?} has no file name"))
+                SkippableResult::Err(anyhow::anyhow!("{path:?} has no file name"))
             }
         })
         .collect()
@@ -262,6 +265,7 @@ fn mv(
     todo!()
 }
 
+#[derive(Debug)]
 pub enum SkippableResult<T> {
     Ok(T),
     Skipped,

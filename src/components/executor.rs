@@ -38,31 +38,33 @@ impl Executor {
         let rule_map = rule_map.clone();
         let log = self.log.clone();
         thread::spawn(move || loop {
-            if receiver.recv().is_ok() {
-                for (dir, rules) in rule_map.iter() {
-                    for rule in rules {
-                        for event in rule.events() {
-                            println!();
-                            match event.execute(dir) {
-                                Ok(results) => {
-                                    let mut log = log.lock().expect("unable to aquire mutex");
-                                    for result in results {
-                                        match result {
-                                            SkippableResult::Ok(entry) => log.push(entry),
-                                            SkippableResult::Err(e) => eprintln!("{e}"),
-                                            SkippableResult::Skipped => {}
-                                        }
+            if receiver.try_recv().is_ok() {
+                return;
+            }
+            for (dir, rules) in rule_map.iter() {
+                for rule in rules {
+                    for event in rule.events() {
+                        match dbg!(event.execute(dir)) {
+                            Ok(results) => {
+                                let mut log = log.lock().expect("unable to aquire mutex");
+                                for result in results {
+                                    match result {
+                                        SkippableResult::Ok(entry) => log.push(entry),
+                                        SkippableResult::Err(e) => eprintln!("An error has occured while trying to execute the event on one of the items: {e}"),
+                                        SkippableResult::Skipped => {}
                                     }
                                 }
-                                Err(e) => {
-                                    eprintln!("{e}");
-                                }
+                            }
+                            Err(e) => {
+                                eprintln!(
+                                    "An error has occured while trying to perform an event: {e}"
+                                );
                             }
                         }
                     }
                 }
             }
-            std::thread::sleep(Duration::from_secs(5));
+            std::thread::sleep(Duration::from_secs(15));
         });
     }
 
