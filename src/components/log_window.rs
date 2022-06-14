@@ -12,11 +12,8 @@ use relm4::{
     view, ComponentParts, ComponentSender, RelmRemoveAllExt, Sender, SimpleComponent, WidgetPlus,
 };
 
+use crate::{lib::Event, log::Log};
 use crate::{lib::Var, log::LogEntry};
-use crate::{
-    lib::{Event, TagExpr},
-    log::Log,
-};
 
 #[derive(Debug)]
 pub struct LogWindow {

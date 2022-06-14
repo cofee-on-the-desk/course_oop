@@ -3,6 +3,7 @@ mod lib;
 use components::edit_rule_window::{EditMode, EditRuleOutput, EditRuleWindow};
 use components::executor::Executor;
 use components::log_window::LogWindow;
+use components::property_window::PropertyWindow;
 use lib::{Event, Item, ItemType, Rule, Tag, TagExpr, Var};
 
 mod db;
@@ -21,7 +22,10 @@ use utils::Expect;
 
 use adw::prelude::{BinExt, ExpanderRowExt};
 use relm4::gtk::glib::FromVariant;
-use relm4::gtk::prelude::{BoxExt, Cast, IsA, StaticType, StaticVariantType, ToVariant};
+use relm4::gtk::prelude::{
+    BoxExt, Cast, GestureExt, GestureSingleExt, IsA, PopoverExt, SelectionModelExt, StaticType,
+    StaticVariantType, ToVariant,
+};
 use relm4::{
     adw, component, gtk, view, Component, ComponentParts, ComponentSender, RelmApp,
     RelmRemoveAllExt, SimpleComponent, WidgetPlus,
@@ -46,6 +50,7 @@ pub enum AppMsg {
     EditRule(usize, Rule),
     DeleteRule(usize),
     ShowLog,
+    OpenPropertiesAt(usize),
     Ignore,
     Quit,
 }
@@ -135,7 +140,7 @@ impl SimpleComponent for App {
                     set_spacing: 10,
                     set_orientation: gtk::Orientation::Horizontal,
                     gtk::Image {
-                        set_from_file: Some(ItemType::Dir.icon_path()),
+                        set_icon_name: Some("folder"),
                         set_icon_size: gtk::IconSize::Large,
                     },
                     gtk::Label {
@@ -332,6 +337,10 @@ impl SimpleComponent for App {
                     .transient_for(root)
                     .launch(data.db.log().clone());
             }
+            AppMsg::OpenPropertiesAt(index) => {
+                let item = data.explorer.items()[index].clone();
+                PropertyWindow::builder().transient_for(root).launch(item);
+            }
             AppMsg::Ignore => {}
         }
     }
@@ -350,7 +359,8 @@ fn main() {
 /// A selection model for the file view.
 fn selection_model(items: &[Item]) -> gtk::MultiSelection {
     let list_model = gtk::gio::ListStore::new(gtk::Box::static_type());
-    for item in items {
+    let selection_model = gtk::MultiSelection::new(Some(&list_model));
+    for (index, item) in items.iter().enumerate() {
         let tags = all_tags();
         let path = item.path().to_owned();
         view! {
@@ -359,7 +369,7 @@ fn selection_model(items: &[Item]) -> gtk::MultiSelection {
                 set_margin_all: 10,
 
                 gtk::Image {
-                    set_from_file: Some(item.tp().icon_path()),
+                    set_icon_name: if item.tp() == &ItemType::Dir { Some("folder") } else { Some("x-office-document" ) },
                     set_icon_size: gtk::IconSize::Large,
                 },
                 gtk::Label {
@@ -386,11 +396,29 @@ fn selection_model(items: &[Item]) -> gtk::MultiSelection {
                     tooltip.set_custom(Some(&tags));
                     true
                 },
+                add_controller = &gtk::GestureClick {
+                    set_button: 3,
+                    connect_pressed[selection_model, gtk_box] => move |_, _, _, _| {
+                        let selection = selection_model.selection();
+                        let popover = if selection.size() > 1 {
+                            todo!()
+                        }
+                        else {
+                            create_popover(vec![("Properties", AppMsg::OpenPropertiesAt(index))])
+                        };
+                        gtk_box.append(&popover);
+                        let gtk_box_cloned = gtk_box.clone();
+                        popover.show();
+                        popover.connect_closed(move |popover| {
+                            gtk_box_cloned.remove(popover);
+                        });
+                    }
+                }
             }
         }
         list_model.append(&gtk_box);
     }
-    gtk::MultiSelection::new(Some(&list_model))
+    selection_model
 }
 
 /// A factory that produces an exact copy of its input.
@@ -521,4 +549,36 @@ fn add_rule_button(sender: &relm4::Sender<AppMsg>) -> gtk::Button {
         }
     }
     button
+}
+
+fn create_popover(data: Vec<(&str, AppMsg)>) -> gtk::Popover {
+    let popover = gtk::Popover::new();
+    let buttons = data
+        .into_iter()
+        .map(|(name, msg)| {
+            let button = gtk::Button::builder()
+                .css_classes(vec!["flat".into()])
+                .label(name)
+                .build();
+            let popover = popover.clone();
+            button.connect_clicked(move |_| {
+                popover.hide();
+                SENDER.send(msg.clone())
+            });
+            button
+        })
+        .collect::<Vec<_>>();
+
+    view! {
+        #[local]
+        popover {
+            set_position: gtk::PositionType::Right,
+            gtk::Box {
+                set_orientation: gtk::Orientation::Vertical,
+                #[iterate]
+                append: buttons.iter(),
+            }
+        }
+    }
+    popover
 }

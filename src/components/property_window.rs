@@ -4,9 +4,10 @@ use relm4::{
         self,
         prelude::{BoxExt, GtkWindowExt, OrientableExt, WidgetExt},
     },
-    ComponentParts, ComponentSender, SimpleComponent, WidgetPlus,
+    view, ComponentParts, ComponentSender, SimpleComponent, WidgetPlus,
 };
 
+use crate::all_tags;
 use crate::lib::Item;
 
 pub struct PropertyWindow;
@@ -25,6 +26,7 @@ impl SimpleComponent for PropertyWindow {
             set_modal: true,
             set_default_width: 400,
             set_default_height: 600,
+            set_title: Some(&format!("Properties of {}", item.path().to_string_lossy())),
             gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
                 set_margin_all: 15,
@@ -32,16 +34,11 @@ impl SimpleComponent for PropertyWindow {
                 gtk::Box {
                     set_orientation: gtk::Orientation::Horizontal,
                     set_spacing: 5,
-                    /*gtk::Image {
-                        set_from_file: Some(item.tp().icon_path()),
+                    gtk::Image {
+                        set_icon_name: Some("folder"),
                         set_icon_size: gtk::IconSize::Large,
-                    },*/
+                    },
                     gtk::Label { set_label?: &item.name() }
-                },
-                gtk::Label {
-                    set_label: "General",
-                    set_halign: gtk::Align::Start,
-                    inline_css: "opacity: 0.5",
                 },
                 gtk::Box {
                     set_orientation: gtk::Orientation::Horizontal,
@@ -71,6 +68,25 @@ impl SimpleComponent for PropertyWindow {
                         set_orientation: gtk::Orientation::Horizontal,
                         set_hexpand: true,
                         set_selection_mode: gtk::SelectionMode::None,
+                        #[iterate]
+                        insert[-1]:
+                            all_tags()
+                            .into_iter()
+                            .filter(|tag| if let Ok(b) = tag.is(item.path()) { b } else { false }).map(|tag| {
+                                view! {
+                                label = gtk::Label {
+                                        set_height_request: 30,
+                                        set_margin_top: 2,
+                                        set_margin_bottom: 2,
+                                        set_label: tag.name(),
+                                        set_tooltip_text: Some(tag.desc()),
+                                        add_css_class: "tag",
+                                    }
+                                }
+                                label
+                            })
+                            .collect::<Vec<_>>()
+                            .iter(),
                     }
                 },
             }
