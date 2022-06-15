@@ -1,54 +1,87 @@
 //! Tags represent a category of files that meet a certain criteria.
-use std::path::Path;
+use std::{cmp::Ordering, path::Path, time::Duration};
 
 use crate::lib::Item;
 
+use anyhow::Context;
+use byte_unit::Byte;
+use infer::MatcherType;
 use serde::{Deserialize, Serialize};
 
 use super::ItemType;
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
-pub enum Basis {
-    Bool(bool),
+pub enum Base {
     Type(ItemType),
     Name(String),
+    SizeLT(Byte),
+    SizeGT(Byte),
     Extension(Vec<String>),
-    ChildrenCount(usize),
-    And(Vec<Basis>),
-    Or(Vec<Basis>),
+    // We have to add a separate variant for each ordering
+    // because `std::cmp::Ordering` does not implement serde traits.
+    ChildrenCountLT(usize),
+    ChildrenCountET(usize),
+    ChildrenCountGT(usize),
+    LifetimeLT(Duration),
+    LifetimeGT(Duration),
+    IsImage,
+    IsVideo,
+    IsAudio,
+    IsDocument,
+    IsArchive,
+    IsBook,
 }
 
-impl Basis {
+impl Base {
     pub fn is(&self, path: &Path) -> anyhow::Result<bool> {
-        let item = Item::try_from_path(path)?;
+        let mut item = Item::try_from_path(path)?;
         match self {
-            Basis::Bool(b) => Ok(*b),
-            Basis::Type(tp) => Ok(item.tp() == tp),
-            Basis::Name(name) => Ok(item.name().as_ref() == Some(name)),
-            Basis::Extension(extensions) => Ok(item.tp() == &ItemType::File
+            Base::Type(tp) => Ok(item.tp() == tp),
+            Base::Name(name) => Ok(item.name().as_ref() == Some(name)),
+            Base::Extension(extensions) => Ok(item.tp() == &ItemType::File
                 && item
                     .ext()
                     .map(|ext| extensions.contains(&ext))
                     .unwrap_or(false)),
-            Basis::ChildrenCount(count) => Ok(
-                item.tp() == &ItemType::Dir && std::fs::read_dir(item.path())?.count() == *count
-            ),
-            Basis::And(vec) => {
-                let mut result = true;
-                for basis in vec {
-                    result = result && basis.is(item.path())?
-                }
-                Ok(result)
+            Base::SizeLT(byte) => is_size(&mut item, Ordering::Less, byte),
+            Base::SizeGT(byte) => is_size(&mut item, Ordering::Greater, byte),
+            Base::ChildrenCountLT(count) => is_children_count(item.path(), Ordering::Less, count),
+            Base::ChildrenCountET(count) => is_children_count(item.path(), Ordering::Equal, count),
+            Base::ChildrenCountGT(count) => {
+                is_children_count(item.path(), Ordering::Greater, count)
             }
-            Basis::Or(vec) => {
-                let mut result = true;
-                for basis in vec {
-                    result = result || basis.is(item.path())?
-                }
-                Ok(result)
-            }
+            Base::LifetimeLT(duration) => is_lifetime(item.path(), Ordering::Less, duration),
+            Base::LifetimeGT(duration) => is_lifetime(item.path(), Ordering::Greater, duration),
+            Base::IsImage => is_matcher_type(item.path(), MatcherType::Image),
+            Base::IsVideo => is_matcher_type(item.path(), MatcherType::Video),
+            Base::IsAudio => is_matcher_type(item.path(), MatcherType::Audio),
+            Base::IsDocument => is_matcher_type(item.path(), MatcherType::Doc),
+            Base::IsArchive => is_matcher_type(item.path(), MatcherType::Archive),
+            Base::IsBook => is_matcher_type(item.path(), MatcherType::Book),
         }
     }
+}
+
+fn is_lifetime(path: &Path, ordering: Ordering, duration: &Duration) -> anyhow::Result<bool> {
+    let then = std::fs::metadata(path)?.created()?;
+    let now = std::time::SystemTime::now();
+    let dur = now.duration_since(then)?;
+    Ok(dur.cmp(duration) == ordering)
+}
+
+fn is_size(item: &mut Item, ordering: Ordering, size: &Byte) -> anyhow::Result<bool> {
+    Ok(item.size()?.cmp(size) == ordering)
+}
+
+fn is_children_count(path: &Path, ordering: Ordering, count: &usize) -> anyhow::Result<bool> {
+    Ok(path.is_dir() && std::fs::read_dir(path)?.count().cmp(count) == ordering)
+}
+
+fn is_matcher_type(path: &Path, tp: MatcherType) -> anyhow::Result<bool> {
+    Ok(infer::get_from_path(path)?
+        .with_context(|| "Unknown file format")?
+        .matcher_type()
+        == tp)
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -101,7 +134,7 @@ impl TagExpr {
             .chain(self.1.iter())
             .map(|single| single.name())
             .collect::<Vec<_>>()
-            .join(" + ")
+            .join(" AND ")
     }
     pub fn desc(&self) -> String {
         if self.1.is_empty() {
@@ -131,9 +164,9 @@ impl TagExpr {
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
 pub struct Tag {
-    name: String,
-    desc: String,
-    basis: Basis,
+    pub name: String,
+    pub desc: String,
+    pub basis: Base,
 }
 
 impl Default for Tag {
@@ -153,16 +186,40 @@ impl Tag {
         self.basis.is(path)
     }
     pub fn dummy() -> Self {
-        Tag { name: "🧱 Dummy".into(), basis: Basis::Name("dummy.test".into()), desc: "An object with the name 'dummy.test'. Used as a placeholder inside events, usually you would want to replace it with another useful tag.".into() }
+        Tag { name: "🧱 Dummy".into(), basis: Base::Name("dummy.test".into()), desc: "An object with the name 'dummy.test'. Used as a placeholder inside events, usually you would want to replace it with another useful tag.".into() }
     }
 }
 
 pub fn all_tags() -> Vec<Tag> {
-    vec![
-    Tag::dummy(),
-    Tag { name: "📁 Folder".into(), basis: Basis::Type(ItemType::Dir), desc: "An object that contains other files.".into() },
-    Tag { name: "📄 File".into(), basis: Basis::Type(ItemType::File), desc: "An object that contains data. The data can be represented in plain text or encoded in any format.".into() },
-    Tag { name: "🐚 Empty".into(), basis: Basis::ChildrenCount(0), desc: "An empty folder.".into() },
-    Tag { name: "📦 Item".into(), basis: Basis::Bool(true), desc: "A folder, file or a symlink.".into() }
+    all_tags_sorted_by_columns().into_iter().flatten().collect()
+}
+
+pub fn all_tags_sorted_by_columns() -> [Vec<Tag>; 4] {
+    [
+        vec![
+            Tag { name: "📁 Folder".into(), basis: Base::Type(ItemType::Dir), desc: "An object that contains other files.".into() },
+            Tag { name: "📄 File".into(), basis: Base::Type(ItemType::File), desc: "An object that contains data. The data can be represented in plain text or encoded in any format.".into() },
+            Tag { name: "🖼️ Image".into(), basis: Base::IsImage, desc: "A file that contains graphics.".into() },
+            Tag { name: "🎞️ Video".into(), basis: Base::IsVideo, desc: "A file that contains video materials.".into() },
+            Tag { name: "🔉 Audio".into(), basis: Base::IsAudio, desc: "A file that contains audio.".into() },
+            Tag { name: "🗃️ Archive".into(), basis: Base::IsArchive, desc: "A compressed file format.".into() },
+            Tag { name: "📃 Document".into(), basis: Base::IsDocument, desc: "A file recognizable by an office suite, such as a text document, presentation or a spreadsheet.".into() },
+            Tag { name: "📚 Book".into(), basis: Base::IsBook, desc: "A document that is recognizable by book readers.".into() },
+        ],
+        vec![
+            Tag { name: "💾 < 1KB".into(), basis: Base::SizeLT(Byte::from_str("1KB").unwrap()), desc: "Various files that have their total size less than 1KB. Size for folders is calculated recursively.".into()    },
+            Tag { name: "💾 < 1MB".into(), basis: Base::SizeLT(Byte::from_str("1MB").unwrap()), desc: "Various files that have their total size less than 1MB. Size for folders is calculated recursively.".into()    },
+            Tag { name: "💾 < 1GB".into(), basis: Base::SizeLT(Byte::from_str("1GB").unwrap()), desc: "Various files that have their total size less than 1GB. Size for folders is calculated recursively.".into()    },
+            Tag { name: "💾 < 10GB".into(), basis: Base::SizeLT(Byte::from_str("10GB").unwrap()), desc: "Various files that have their total size less than 10GB. Size for folders is calculated recursively.".into() },
+        ],
+        vec![
+            Tag { name: "🕒 Lifetime > 1h".into(), basis: Base::LifetimeGT(Duration::from_secs(360)), desc: "Files that were created more than 1 hour ago".into() },
+            Tag { name: "🕒 Lifetime > 8h".into(), basis: Base::LifetimeGT(Duration::from_secs(28800)), desc: "Files that were created more than 8 hours ago".into() },
+            Tag { name: "🕒 Lifetime > 24h".into(), basis: Base::LifetimeGT(Duration::from_secs(86400)), desc: "Files that were created more than 24 hours ago".into() }, 
+        ],
+        vec![
+            Tag { name: "📂 Empty Folder".into(),  basis: Base::ChildrenCountET(0), desc: "An empty folder.".into() },
+            Tag::dummy(),
+        ]
     ]
 }

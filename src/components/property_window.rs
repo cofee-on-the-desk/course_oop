@@ -25,7 +25,7 @@ impl SimpleComponent for PropertyWindow {
         gtk::Window {
             set_modal: true,
             set_default_width: 400,
-            set_default_height: 600,
+            set_default_height: 450,
             set_title: Some(&format!("Properties of {}", item.path().to_string_lossy())),
             gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
@@ -60,10 +60,10 @@ impl SimpleComponent for PropertyWindow {
                     }
                 },
                 gtk::Separator {},
+                gtk::Label { set_label: "Tags" },
                 gtk::Box {
                     set_orientation: gtk::Orientation::Horizontal,
                     set_spacing: 5,
-                    gtk::Label { set_label: "Tags:" },
                     gtk::FlowBox {
                         set_orientation: gtk::Orientation::Horizontal,
                         set_hexpand: true,

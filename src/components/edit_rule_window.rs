@@ -17,8 +17,11 @@ use relm4::{
     view, ComponentParts, ComponentSender, RelmRemoveAllExt, Sender, SimpleComponent, WidgetPlus,
 };
 
-use crate::lib::{all_tags, Event, Rule, Tag, TagExpr, Var};
+use crate::lib::Base;
+use crate::lib::{all_tags_sorted_by_columns, Event, Rule, Tag, TagExpr, Var};
 use crate::utils::Bind;
+use crate::AppMsg;
+use crate::SENDER;
 
 #[derive(Debug)]
 pub struct EditRuleWindow {
@@ -332,6 +335,7 @@ pub fn var_view(
                 .build(),
         )),
         Var::TagExpr(expr) => bin.set_child(Some(&{
+            let columns = all_tags_sorted_by_columns();
             view! {
                 button = gtk::MenuButton {
                     set_margin_top: 12,
@@ -346,24 +350,151 @@ pub fn var_view(
                                 set_margin_start: 10,
                                 set_margin_end: 10,
                                 set_spacing: 15,
-                                #[iterate]
-                                append: all_tags().iter().map(|tag| {
-                                    view! {
-                                        widget = gtk::Button {
-                                            set_margin_top: 12,
-                                            set_margin_bottom: 12,
-                                            set_label: tag.name(),
-                                            set_tooltip_text: Some(tag.desc()),
-                                            add_css_class: "tag",
-                                            add_css_class?: expr.has(tag).then(|| "opaque"),
-                                            connect_clicked[sender, tag, popover] => move |_| {
-                                                popover.hide();
-                                                sender.send(EditRuleInput::ClickedTag(index, tag.clone()));
+                                gtk::Box {
+                                    set_orientation: gtk::Orientation::Vertical,
+                                    set_spacing: 10,
+                                    set_width_request: 300,
+                                    gtk::Label { set_markup: "<b>Filetype</b>" },
+                                    gtk::FlowBox {
+                                        set_selection_mode: gtk::SelectionMode::None,
+                                        #[iterate]
+                                        insert[-1]: columns[0]
+                                            .iter()
+                                            .map(|tag| tag_view(index, expr, tag, sender, &popover))
+                                            .collect::<Vec<_>>()
+                                            .iter(),
+                                    }
+                                },
+                                gtk::Separator {},
+                                gtk::Box {
+                                    set_orientation: gtk::Orientation::Vertical,
+                                    set_spacing: 10,
+                                    set_width_request: 300,
+                                    gtk::Label { set_markup: "<b>Size</b>" },
+                                    gtk::FlowBox {
+                                        set_selection_mode: gtk::SelectionMode::None,
+                                        #[iterate]
+                                        insert[-1]: columns[1]
+                                            .iter()
+                                            .map(|tag| tag_view(index, expr, tag, sender, &popover))
+                                            .collect::<Vec<_>>()
+                                            .iter(),
+                                    },
+                                    gtk::Label { set_margin_start: 10, set_label: "Custom", set_xalign: 0. },
+                                    gtk::Box {
+                                        set_orientation: gtk::Orientation::Horizontal,
+                                        set_margin_all: 10,
+                                        set_spacing: 10,
+                                        append: custom_size = &gtk::Entry {
+                                            set_hexpand: true,
+                                            set_placeholder_text: Some("250MB"),
+                                            connect_changed[custom_size_confirm] => move |entry| {
+                                                if entry.buffer().text().trim().is_empty() {
+                                                    custom_size_confirm.set_sensitive(false);
+                                                }
+                                                else {
+                                                    custom_size_confirm.set_sensitive(true);
+                                                }
+                                            }
+                                        },
+                                        append: custom_size_confirm = &gtk::Button {
+                                            set_sensitive: false,
+                                            set_icon_name: "emblem-ok-symbolic",
+                                            set_css_classes: &["flat", "circular"],
+                                            connect_clicked[sender, custom_size, popover] => move |_| {
+                                                let size = byte_unit::Byte::from_str(custom_size.buffer().text());
+                                                match size {
+                                                    Ok(size) => {
+                                                        let size_str = size.get_appropriate_unit(true).to_string();
+                                                        popover.hide();
+                                                        sender.send(EditRuleInput::ClickedTag(index, Tag {
+                                                            name: format!("💾 < {}", &size_str),
+                                                            basis: Base::SizeLT(size),
+                                                            desc: format!("A custom tag which includes files that are < {} in size.", &size_str),
+                                                        }));
+                                                    }
+                                                    Err(e) => {
+                                                        popover.hide();
+                                                        SENDER.send(AppMsg::Error("Wrong file size formatting".to_string(), e.to_string()));
+                                                    }
+                                                }
                                             }
                                         }
                                     }
-                                    widget
-                                }).collect::<Vec<_>>().iter(),
+                                },
+                                gtk::Separator {},
+                                gtk::Box {
+                                    set_orientation: gtk::Orientation::Vertical,
+                                    set_spacing: 10,
+                                    set_width_request: 300,
+                                    gtk::Label { set_markup: "<b>Creation date</b>" },
+                                    gtk::FlowBox {
+                                        set_selection_mode: gtk::SelectionMode::None,
+                                        #[iterate]
+                                        insert[-1]: columns[2]
+                                        .iter()
+                                        .map(|tag| tag_view(index, expr, tag, sender, &popover))
+                                        .collect::<Vec<_>>()
+                                        .iter(),
+                                    },
+
+                                    gtk::Label { set_margin_start: 10, set_label: "Custom", set_xalign: 0. },
+                                    gtk::Box {
+                                        set_orientation: gtk::Orientation::Horizontal,
+                                        set_margin_all: 10,
+                                        set_spacing: 10,
+                                        append: creation_date = &gtk::Entry {
+                                            set_hexpand: true,
+                                            set_placeholder_text: Some("48h"),
+                                            connect_changed[creation_date_confirm] => move |entry| {
+                                                if entry.buffer().text().trim().is_empty() {
+                                                    creation_date_confirm.set_sensitive(false);
+                                                }
+                                                else {
+                                                    creation_date_confirm.set_sensitive(true);
+                                                }
+                                            }
+                                        },
+                                        append: creation_date_confirm = &gtk::Button {
+                                            set_sensitive: false,
+                                            set_icon_name: "emblem-ok-symbolic",
+                                            set_css_classes: &["flat", "circular"],
+                                            connect_clicked[sender, creation_date, popover] => move |_| {
+                                                let duration = duration_string::DurationString::try_from(creation_date.buffer().text());
+                                                match duration {
+                                                    Ok(duration) => {
+                                                        popover.hide();
+                                                        sender.send(EditRuleInput::ClickedTag(index, Tag {
+                                                            name: format!("🕒 < {}", &duration),
+                                                            desc: format!("A custom tag which includes files that were created more than {} ago.", &duration),
+                                                            basis: Base::LifetimeGT(duration.into()),
+                                                        }));
+                                                    }
+                                                    Err(e) => {
+                                                        popover.hide();
+                                                        SENDER.send(AppMsg::Error("Wrong file size formatting".to_string(), e));
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                gtk::Separator {},
+                                gtk::Box {
+                                    set_orientation: gtk::Orientation::Vertical,
+                                    set_spacing: 10,
+                                    set_width_request: 300,
+                                    gtk::Label { set_markup: "<b>Other</b>" },
+                                    gtk::FlowBox {
+                                        set_selection_mode: gtk::SelectionMode::None,
+                                        #[iterate]
+                                        insert[-1]: columns[3]
+                                        .iter()
+                                        .map(|tag| tag_view(index, expr, tag, sender, &popover))
+                                        .collect::<Vec<_>>()
+                                        .iter(),
+                                    }
+                                },
                             },
                             gtk::CenterBox {
                                 set_margin_all: 10,
@@ -467,4 +598,28 @@ fn parse_path(s: &str) -> Option<PathBuf> {
     } else {
         None
     }
+}
+
+fn tag_view(
+    index: usize,
+    expr: &TagExpr,
+    tag: &Tag,
+    sender: &Sender<EditRuleInput>,
+    popover: &gtk::Popover,
+) -> impl IsA<gtk::Widget> {
+    view! {
+        widget = gtk::Button {
+            set_margin_top: 8,
+            set_margin_bottom: 8,
+            set_label: tag.name(),
+            set_tooltip_text: Some(tag.desc()),
+            add_css_class: "tag",
+            add_css_class?: expr.has(tag).then(|| "opaque"),
+            connect_clicked[sender, tag, popover] => move |_| {
+                popover.hide();
+                sender.send(EditRuleInput::ClickedTag(index, tag.clone()));
+            }
+        }
+    }
+    widget
 }
