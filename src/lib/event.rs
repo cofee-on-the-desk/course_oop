@@ -1,5 +1,6 @@
 use super::TagExpr;
 use crate::{fs::read_path, log::LogEntry};
+use fs_extra::dir::CopyOptions;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -183,7 +184,10 @@ fn copy(
                     if !overwrite && to.join(file_name).exists() {
                         SkippableResult::Skipped
                     } else {
-                        let options = fs_extra::dir::CopyOptions::new();
+                        let options = CopyOptions {
+                            overwrite,
+                            ..CopyOptions::new()
+                        };
                         match fs_extra::copy_items(&[path], to, &options) {
                             Ok(_) => SkippableResult::Ok(path.to_owned()),
                             Err(e) => SkippableResult::Err(e.into()),
@@ -216,7 +220,10 @@ fn mv(
                     if !overwrite && to.join(file_name).exists() {
                         SkippableResult::Skipped
                     } else {
-                        let options = fs_extra::dir::CopyOptions::new();
+                        let options = CopyOptions {
+                            overwrite,
+                            ..CopyOptions::new()
+                        };
                         match fs_extra::move_items(&[path], to, &options) {
                             Ok(_) => SkippableResult::Ok(path.to_owned()),
                             Err(e) => SkippableResult::Err(e.into()),
@@ -265,5 +272,201 @@ impl<T, E: std::error::Error + Send + Sync + 'static> From<Result<T, E>> for Ski
             Ok(val) => SkippableResult::Ok(val),
             Err(e) => SkippableResult::Err(e.into()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::lib::SkippableResult;
+
+    use super::{copy, mv, trash};
+    use std::path::PathBuf;
+
+    fn test_dir_a() -> PathBuf {
+        let dir = dirs::desktop_dir().unwrap().join("event-test-a");
+        if !dir.exists() {
+            std::fs::create_dir(&dir).unwrap();
+        }
+        dir
+    }
+
+    fn test_dir_b() -> PathBuf {
+        let dir = dirs::desktop_dir().unwrap().join("event-test-b");
+        if !dir.exists() {
+            std::fs::create_dir(&dir).unwrap();
+        }
+        dir
+    }
+
+    #[test]
+    fn copy_one() {
+        let from = test_dir_a().join("test1.txt");
+        if !from.exists() {
+            std::fs::File::create(&from).unwrap();
+        }
+        let to = test_dir_b();
+        if to.join("test1.txt").exists() {
+            std::fs::remove_file(&to.join("test1.txt")).unwrap();
+        }
+        let result = copy(&[&from], to, false);
+        assert!(from.exists());
+        assert!(matches!(&result[..], &[SkippableResult::Ok(_)]));
+    }
+
+    #[test]
+    fn copy_skip() {
+        let from = test_dir_a().join("test2.txt");
+        if !from.exists() {
+            std::fs::File::create(&from).unwrap();
+        }
+        let to = test_dir_b();
+        if !to.join("test2.txt").exists() {
+            std::fs::File::create(&to.join("test2.txt")).unwrap();
+        }
+        let result = copy(&[&from], to, false);
+        assert!(from.exists());
+        assert!(matches!(&result[..], &[SkippableResult::Skipped]));
+    }
+
+    #[test]
+    fn copy_overwrite() {
+        let from = test_dir_a().join("test3.txt");
+        if !from.exists() {
+            std::fs::File::create(&from).unwrap();
+        }
+        let to = test_dir_b();
+        if !to.join("test3.txt").exists() {
+            std::fs::File::create(&to.join("test3.txt")).unwrap();
+        }
+        let result = copy(&[&from], to, true);
+        assert!(from.exists());
+        assert!(matches!(&result[..], &[SkippableResult::Ok(_)]));
+    }
+
+    #[test]
+    fn copy_multiple() {
+        let from1 = test_dir_a().join("test4-1.txt");
+        if !from1.exists() {
+            std::fs::File::create(&from1).unwrap();
+        }
+        let from2 = test_dir_a().join("test4-2.txt");
+        if !from2.exists() {
+            std::fs::File::create(&from2).unwrap();
+        }
+        let to = test_dir_b();
+        if !to.join("test4-1.txt").exists() {
+            std::fs::File::create(&to.join("test4-1.txt")).unwrap();
+        }
+        if to.join("test4-2.txt").exists() {
+            std::fs::remove_file(&to.join("test4-2.txt")).unwrap();
+        }
+        let result = copy(&[&from1, &from2], to, false);
+        assert!(from1.exists());
+        assert!(from2.exists());
+        assert!(matches!(
+            &result[..],
+            &[SkippableResult::Skipped, SkippableResult::Ok(_)]
+        ));
+    }
+
+    #[test]
+    fn mv_one() {
+        let from = test_dir_a().join("test5.txt");
+        if !from.exists() {
+            std::fs::File::create(&from).unwrap();
+        }
+        let to = test_dir_b();
+        if to.join("test5.txt").exists() {
+            std::fs::remove_file(&to.join("test5.txt")).unwrap();
+        }
+        let result = mv(&[&from], to, false);
+        assert!(!from.exists());
+        assert!(matches!(&result[..], &[SkippableResult::Ok(_)]));
+    }
+
+    #[test]
+    fn mv_skip() {
+        let from = test_dir_a().join("test6.txt");
+        if !from.exists() {
+            std::fs::File::create(&from).unwrap();
+        }
+        let to = test_dir_b();
+        if !to.join("test6.txt").exists() {
+            std::fs::File::create(&to.join("test6.txt")).unwrap();
+        }
+        let result = mv(&[&from], to, false);
+        assert!(from.exists());
+        assert!(matches!(&result[..], &[SkippableResult::Skipped]));
+    }
+
+    #[test]
+    fn mv_overwrite() {
+        let from = test_dir_a().join("test7.txt");
+        if !from.exists() {
+            std::fs::File::create(&from).unwrap();
+        }
+        let to = test_dir_b();
+        if !to.join("test7.txt").exists() {
+            std::fs::File::create(&to.join("test7.txt")).unwrap();
+        }
+        let result = mv(&[&from], to, true);
+        assert!(!from.exists());
+        assert!(matches!(&result[..], &[SkippableResult::Ok(_)]));
+    }
+
+    #[test]
+    fn mv_multiple() {
+        let from1 = test_dir_a().join("test8-1.txt");
+        if !from1.exists() {
+            std::fs::File::create(&from1).unwrap();
+        }
+        let from2 = test_dir_a().join("test8-2.txt");
+        if !from2.exists() {
+            std::fs::File::create(&from2).unwrap();
+        }
+        let to = test_dir_b();
+        if !to.join("test8-1.txt").exists() {
+            std::fs::File::create(&to.join("test8-1.txt")).unwrap();
+        }
+        if to.join("test8-2.txt").exists() {
+            std::fs::remove_file(&to.join("test8-2.txt")).unwrap();
+        }
+        let result = mv(&[&from1, &from2], to, false);
+        assert!(from1.exists());
+        assert!(!from2.exists());
+        assert!(matches!(
+            &result[..],
+            &[SkippableResult::Skipped, SkippableResult::Ok(_)]
+        ));
+    }
+
+    #[test]
+    fn trash_one() {
+        let file = test_dir_a().join("test9.txt");
+        if !file.exists() {
+            std::fs::File::create(&file).unwrap();
+        }
+        let result = trash(&[&file]);
+        assert!(!file.exists());
+        assert!(matches!(&result[..], &[SkippableResult::Ok(_)]));
+    }
+
+    #[test]
+    fn trash_multiple() {
+        let file1 = test_dir_a().join("test10-1.txt");
+        if !file1.exists() {
+            std::fs::File::create(&file1).unwrap();
+        }
+        let file2 = test_dir_a().join("test10-2.txt");
+        if !file2.exists() {
+            std::fs::File::create(&file2).unwrap();
+        }
+        let result = trash(&[&file1, &file2]);
+        assert!(!file1.exists());
+        assert!(!file2.exists());
+        assert!(matches!(
+            &result[..],
+            &[SkippableResult::Ok(_), SkippableResult::Ok(_)]
+        ));
     }
 }
