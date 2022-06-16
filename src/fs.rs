@@ -55,7 +55,7 @@ impl Explorer {
 impl Default for Explorer {
     fn default() -> Self {
         let dir = Item::new(
-            home::home_dir()
+            dirs::home_dir()
                 .expect("Unable to find user home directory.")
                 .as_path(),
         )

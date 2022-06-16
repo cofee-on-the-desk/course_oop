@@ -7,7 +7,6 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-// TODO: don't actually serialize the whole struct, but use different fields separately, in different files
 #[derive(Clone, Debug)]
 pub struct Database {
     rules: HashMap<PathBuf, Vec<Rule>>,

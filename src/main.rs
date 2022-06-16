@@ -21,10 +21,8 @@ mod util;
 use util::Expect;
 
 use adw::prelude::{BinExt, ExpanderRowExt};
-use relm4::gtk::glib::FromVariant;
 use relm4::gtk::prelude::{
     BoxExt, Cast, GestureSingleExt, IsA, PopoverExt, SelectionModelExt, StaticType,
-    StaticVariantType, ToVariant,
 };
 use relm4::{
     adw, component, gtk, view, Component, ComponentParts, ComponentSender, RelmApp,
@@ -53,24 +51,6 @@ pub enum AppMsg {
     OpenPropertiesAt(usize),
     Ignore,
     Quit,
-}
-
-impl StaticVariantType for AppMsg {
-    fn static_variant_type() -> std::borrow::Cow<'static, gtk::glib::VariantTy> {
-        <[u8]>::static_variant_type()
-    }
-}
-
-impl FromVariant for AppMsg {
-    fn from_variant(variant: &gtk::glib::Variant) -> Option<Self> {
-        bincode::deserialize(&(<Vec<u8> as FromVariant>::from_variant(variant)?)).ok()
-    }
-}
-
-impl ToVariant for AppMsg {
-    fn to_variant(&self) -> gtk::glib::Variant {
-        bincode::serialize(&self).unwrap().to_variant()
-    }
 }
 
 pub struct AppData {
@@ -239,8 +219,6 @@ impl SimpleComponent for App {
         };
 
         let widgets = view_output!();
-
-        // TODO: Use actions to send messages to components
 
         SENDER.init(&sender.input);
         model.executor.restart(model.data.db.rules());
@@ -414,19 +392,15 @@ fn selection_model(items: &[Item]) -> gtk::MultiSelection {
                     set_button: 3,
                     connect_pressed[selection_model, gtk_box] => move |_, _, _, _| {
                         let selection = selection_model.selection();
-                        let popover = if selection.size() > 1 {
-                            // TODO
-                            todo!()
-                        }
-                        else {
-                            create_popover(vec![("Properties", AppMsg::OpenPropertiesAt(index))])
+                        if selection.size() > 1 {
+                            let popover = create_popover(vec![("Properties", AppMsg::OpenPropertiesAt(index))]);
+                            gtk_box.append(&popover);
+                            let gtk_box_cloned = gtk_box.clone();
+                            popover.show();
+                            popover.connect_closed(move |popover| {
+                                gtk_box_cloned.remove(popover);
+                            });
                         };
-                        gtk_box.append(&popover);
-                        let gtk_box_cloned = gtk_box.clone();
-                        popover.show();
-                        popover.connect_closed(move |popover| {
-                            gtk_box_cloned.remove(popover);
-                        });
                     }
                 }
             }

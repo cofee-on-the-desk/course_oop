@@ -89,7 +89,7 @@ impl Event {
         Event {
             expr: TagExpr::default(),
             tp: EventType::Copy {
-                target: home::home_dir().unwrap(),
+                target: dirs::home_dir().unwrap(),
                 overwrite: false,
             },
         }
@@ -98,7 +98,7 @@ impl Event {
         Event {
             expr: TagExpr::default(),
             tp: EventType::Move {
-                target: home::home_dir().unwrap(),
+                target: dirs::home_dir().unwrap(),
                 overwrite: false,
             },
         }
