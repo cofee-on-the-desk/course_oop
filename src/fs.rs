@@ -1,4 +1,4 @@
-use crate::lib::{Item, ItemType};
+use crate::lib::{FileType, Item};
 use std::{
     cmp::Ordering,
     path::{Path, PathBuf},
@@ -11,44 +11,34 @@ pub struct Explorer {
 }
 
 impl Explorer {
-    /// Get a reference to the explorer dir.
     pub fn dir(&self) -> &Item {
         &self.dir
     }
-
-    /// Get a reference to the explorer items.
     pub fn items(&self) -> &[Item] {
         self.items.as_ref()
     }
-
-    /// Get a reference to the explorer history.
     pub fn history(&self) -> &NavigationHistory {
         &self.history
     }
-
     pub fn open(&mut self, path: impl AsRef<Path>) -> anyhow::Result<()> {
         self.update(&path, true)
     }
-
     pub fn go_back(&mut self) -> anyhow::Result<()> {
         let path = self.history.back().to_owned();
         self.update(&path, false)
     }
-
     pub fn go_forward(&mut self) -> anyhow::Result<()> {
         let path = self.history.forward().to_owned();
         self.update(&path, false)
     }
-
     pub fn refresh(&mut self) -> anyhow::Result<()> {
         let path = self.dir.path().to_owned();
         self.update(&path, false)
     }
-
     fn update(&mut self, path: impl AsRef<Path>, update_history: bool) -> anyhow::Result<()> {
         let path = path.as_ref();
 
-        let dir = Item::try_from_path(path)?;
+        let dir = Item::new(path)?;
         let items = read_path(path)?;
 
         if update_history {
@@ -64,14 +54,12 @@ impl Explorer {
 
 impl Default for Explorer {
     fn default() -> Self {
-        let dir = Item::try_from_path(
+        let dir = Item::new(
             home::home_dir()
                 .expect("Unable to find user home directory.")
                 .as_path(),
         )
-        .expect("Unable to create read the user home directory.");
-
-        assert_eq!(dir.tp(), &ItemType::Dir);
+        .expect("Unable to read the user home directory.");
 
         let items = read_path(&dir.path()).unwrap_or_default();
 
@@ -132,14 +120,14 @@ impl NavigationHistory {
 pub fn read_path(path: impl AsRef<Path>) -> anyhow::Result<Vec<Item>> {
     let mut items = std::fs::read_dir(path)?
         .filter_map(|res| res.ok())
-        .filter_map(|entry| Item::try_from_path(entry.path().as_path()).ok())
+        .filter_map(|entry| Item::new(entry.path()).ok())
         .collect::<Vec<_>>();
 
     // Order items by name, folders first
-    items.sort_by(|a, b| match (a.tp(), b.tp()) {
-        (ItemType::Dir, ItemType::Dir) => a.name().cmp(&b.name()),
-        (ItemType::Dir, _) => Ordering::Less,
-        (_, ItemType::Dir) => Ordering::Greater,
+    items.sort_by(|a, b| match (a.file_type(), b.file_type()) {
+        (FileType::Dir, FileType::Dir) => a.name().cmp(&b.name()),
+        (FileType::Dir, _) => Ordering::Less,
+        (_, FileType::Dir) => Ordering::Greater,
         _ => a.name().cmp(&b.name()),
     });
 

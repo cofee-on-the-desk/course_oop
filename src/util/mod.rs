@@ -2,31 +2,14 @@ use crate::AppMsg;
 use relm4::Sender;
 use std::sync::Mutex;
 
-/// Allows using functions (closures) as methods.
-///
-/// Can be useful inside the `view!` macro.
-pub trait Bind {
-    fn bind(&self, f: impl Fn(&Self)) {
-        f(self)
-    }
-}
+mod bind;
+pub use bind::Bind;
 
-impl<T> Bind for T {}
+mod expect;
+pub use expect::Expect;
 
-/// Extension for `anyhow::Result<()>`.
-///
-/// If the underlying value is `Err`, shows an error dialog.
-pub trait Expect {
-    fn or_show_error(self, desc: &str);
-}
-
-impl Expect for anyhow::Result<()> {
-    fn or_show_error(self, desc: &str) {
-        if let Err(e) = self {
-            SENDER.send(AppMsg::Error(desc.to_string(), e.to_string()));
-        }
-    }
-}
+mod path;
+pub use path::PathExt;
 
 lazy_static::lazy_static! {
     /// Global message sender.

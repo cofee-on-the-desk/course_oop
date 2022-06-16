@@ -109,21 +109,7 @@ fn entry_view(
                     set_margin_end: 15,
                     set_orientation: gtk::Orientation::Horizontal,
                     set_spacing: 10,
-                    gtk::Box {
-                        set_orientation: gtk::Orientation::Vertical,
-                        set_spacing: 5,
-                        set_tooltip_text: Some(&entry.source().to_string_lossy()),
-                        set_hexpand: true,
-                        gtk::Image {
-                            set_icon_name: Some("folder-symbolic"),
-                        },
-                        gtk::Label {
-                            set_label: &entry.source().to_string_lossy(),
-                            set_width_chars: 10,
-                            set_lines: 1,
-                            set_ellipsize: gtk::pango::EllipsizeMode::End,
-                        },
-                    },
+                    append?: &source_view(entry.source()),
                     gtk::Box {
                         set_orientation: gtk::Orientation::Vertical,
                         set_spacing: 2,
@@ -140,6 +126,32 @@ fn entry_view(
         }
     }
     row
+}
+
+fn source_view(source: Option<&Path>) -> Option<impl IsA<gtk::Widget>> {
+    if let Some(source) = source {
+        let source_str = source.to_string_lossy();
+        view! {
+            gtk_box = gtk::Box {
+                set_orientation: gtk::Orientation::Vertical,
+                set_spacing: 5,
+                set_tooltip_text: Some(&source_str),
+                set_hexpand: true,
+                gtk::Image {
+                    set_icon_name: Some("folder-symbolic"),
+                },
+                gtk::Label {
+                    set_label: &source_str,
+                    set_width_chars: 10,
+                    set_lines: 1,
+                    set_ellipsize: gtk::pango::EllipsizeMode::End,
+                },
+            }
+        }
+        Some(gtk_box)
+    } else {
+        None
+    }
 }
 
 fn var_view(var: &Var, path: &Path) -> impl IsA<gtk::Widget> {

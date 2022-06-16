@@ -72,7 +72,7 @@ impl SimpleComponent for PropertyWindow {
                         insert[-1]:
                             all_tags()
                             .into_iter()
-                            .filter(|tag| if let Ok(b) = tag.is(item.path()) { b } else { false }).map(|tag| {
+                            .filter(|tag| if let Ok(b) = tag.is(&mut item) { b } else { false }).map(|tag| {
                                 view! {
                                 label = gtk::Label {
                                         set_height_request: 30,

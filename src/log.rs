@@ -21,16 +21,16 @@ impl Log {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct LogEntry {
     event: Event,
-    source: PathBuf,
+    source: Option<PathBuf>,
     file: PathBuf,
     time: DateTime<Local>,
 }
 
 impl LogEntry {
-    pub fn new(event: &Event, source: impl AsRef<Path>, file: impl AsRef<Path>) -> Self {
+    pub fn new(event: &Event, source: Option<impl AsRef<Path>>, file: impl AsRef<Path>) -> Self {
         LogEntry {
             event: event.clone(),
-            source: source.as_ref().to_owned(),
+            source: source.map(|path| path.as_ref().to_owned()),
             file: file.as_ref().to_owned(),
             time: Local::now(),
         }
@@ -42,8 +42,8 @@ impl LogEntry {
     }
 
     /// Get a reference to the log entry's source.
-    pub fn source(&self) -> &PathBuf {
-        &self.source
+    pub fn source(&self) -> Option<&Path> {
+        self.source.as_deref()
     }
 
     /// Get a reference to the log entry's file.

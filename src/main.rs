@@ -4,7 +4,7 @@ use components::edit_rule_window::{EditMode, EditRuleOutput, EditRuleWindow};
 use components::executor::Executor;
 use components::log_window::LogWindow;
 use components::property_window::PropertyWindow;
-use lib::{Event, Item, ItemType, Rule, Tag, TagExpr, Var};
+use lib::{Event, FileType, Item, Rule, Tag, TagExpr, Var};
 
 mod db;
 use db::Database;
@@ -17,8 +17,8 @@ use components::error_dialog::ErrorDialog;
 
 pub mod log;
 
-mod utils;
-use utils::Expect;
+mod util;
+use util::Expect;
 
 use adw::prelude::{BinExt, ExpanderRowExt};
 use relm4::gtk::glib::FromVariant;
@@ -33,9 +33,9 @@ use relm4::{
 use serde::{Deserialize, Serialize};
 
 use gtk::prelude::{ButtonExt, GtkWindowExt, OrientableExt, WidgetExt};
-use utils::SENDER;
+use util::SENDER;
 
-use crate::lib::all_tags;
+use crate::lib::{all_tags, all_tags_sorted_by_columns};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum AppMsg {
@@ -264,12 +264,12 @@ impl SimpleComponent for App {
             }
             AppMsg::OpenAt(index) => {
                 let item = data.explorer.items().get(index).cloned().unwrap();
-                if item.tp() == &ItemType::Dir {
+                if item.file_type() == &FileType::Dir {
                     let path = item.path();
                     data.explorer
                         .open(path)
                         .or_show_error(&format!("Cannot open {:?}", path));
-                } else if item.tp() == &ItemType::File {
+                } else if item.file_type() == &FileType::File {
                     let path = item.path();
                     open::that(path).unwrap_or_else(|_| panic!("Can't open file at path {path:?}"));
                 }
@@ -361,15 +361,27 @@ fn selection_model(items: &[Item]) -> gtk::MultiSelection {
     let list_model = gtk::gio::ListStore::new(gtk::Box::static_type());
     let selection_model = gtk::MultiSelection::new(Some(&list_model));
     for (index, item) in items.iter().enumerate() {
-        let tags = all_tags();
-        let path = item.path().to_owned();
+        let item = item.clone();
+
+        // For the use inside tooltips, we skip the second column
+        // which contains the size requirements, so we don't have to
+        // calculate them for every item.
+        let tags = {
+            let mut columns = all_tags_sorted_by_columns().into_iter().collect::<Vec<_>>();
+            columns.remove(1);
+            columns
+        }
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+
         view! {
             gtk_box = gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
                 set_margin_all: 10,
 
                 gtk::Image {
-                    set_icon_name: if item.tp() == &ItemType::Dir { Some("folder") } else { Some("x-office-document" ) },
+                    set_icon_name: Some(if item.file_type() == &FileType::Dir { "folder" } else { "x-office-document" } ),
                     set_icon_size: gtk::IconSize::Large,
                 },
                 gtk::Label {
@@ -377,11 +389,13 @@ fn selection_model(items: &[Item]) -> gtk::MultiSelection {
                     set_ellipsize: gtk::pango::EllipsizeMode::Middle,
                     set_label?: &item.name(),
                 },
+
                 set_has_tooltip: true,
-                connect_query_tooltip => move |_gtk_box, _x, _y, _keyboard, tooltip| -> bool {
+                connect_query_tooltip[item] => move |_gtk_box, _x, _y, _keyboard, tooltip| -> bool {
+                    let mut item = item.clone();
                     let tag_labels = tags
                         .iter()
-                        .filter(|tag| matches!(tag.is(&path), Ok(true)))
+                        .filter(|tag| matches!(tag.is(&mut item), Ok(true)))
                         .map(tag_view)
                         .collect::<Vec<_>>();
 
@@ -401,6 +415,7 @@ fn selection_model(items: &[Item]) -> gtk::MultiSelection {
                     connect_pressed[selection_model, gtk_box] => move |_, _, _, _| {
                         let selection = selection_model.selection();
                         let popover = if selection.size() > 1 {
+                            // TODO
                             todo!()
                         }
                         else {
@@ -542,6 +557,7 @@ fn add_rule_button(sender: &relm4::Sender<AppMsg>) -> gtk::Button {
     view! {
             button = gtk::Button {
             set_icon_name: "list-add-symbolic",
+            add_css_class: "flat",
             set_hexpand: true,
             connect_clicked[sender] => move |_| {
                 sender.send(AppMsg::NewRuleRequest)

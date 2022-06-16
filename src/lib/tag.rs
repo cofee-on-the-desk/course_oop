@@ -1,18 +1,18 @@
 //! Tags represent a category of files that meet a certain criteria.
 use std::{cmp::Ordering, path::Path, time::Duration};
 
-use crate::lib::Item;
+use crate::{lib::Item, util::PathExt};
 
 use anyhow::Context;
 use byte_unit::Byte;
 use infer::MatcherType;
 use serde::{Deserialize, Serialize};
 
-use super::ItemType;
+use super::FileType;
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
 pub enum Base {
-    Type(ItemType),
+    Type(FileType),
     Name(String),
     SizeLT(Byte),
     SizeGT(Byte),
@@ -33,18 +33,18 @@ pub enum Base {
 }
 
 impl Base {
-    pub fn is(&self, path: &Path) -> anyhow::Result<bool> {
-        let mut item = Item::try_from_path(path)?;
+    pub fn is(&self, item: &mut Item) -> anyhow::Result<bool> {
         match self {
-            Base::Type(tp) => Ok(item.tp() == tp),
+            Base::Type(file_type) => Ok(item.file_type() == file_type),
             Base::Name(name) => Ok(item.name().as_ref() == Some(name)),
-            Base::Extension(extensions) => Ok(item.tp() == &ItemType::File
+            Base::Extension(extensions) => Ok(item.file_type() == &FileType::File
                 && item
+                    .path()
                     .ext()
                     .map(|ext| extensions.contains(&ext))
                     .unwrap_or(false)),
-            Base::SizeLT(byte) => is_size(&mut item, Ordering::Less, byte),
-            Base::SizeGT(byte) => is_size(&mut item, Ordering::Greater, byte),
+            Base::SizeLT(byte) => is_size(item, Ordering::Less, byte),
+            Base::SizeGT(byte) => is_size(item, Ordering::Greater, byte),
             Base::ChildrenCountLT(count) => is_children_count(item.path(), Ordering::Less, count),
             Base::ChildrenCountET(count) => is_children_count(item.path(), Ordering::Equal, count),
             Base::ChildrenCountGT(count) => {
@@ -100,8 +100,8 @@ impl Default for SingleTag {
 }
 
 impl SingleTag {
-    fn is(&self, path: &Path) -> anyhow::Result<bool> {
-        Ok(self.tag.is(path)? == self.used)
+    fn is(&self, item: &mut Item) -> anyhow::Result<bool> {
+        Ok(self.tag.is(item)? == self.used)
     }
     fn name(&self) -> String {
         if self.used {
@@ -122,10 +122,10 @@ impl TagExpr {
     pub fn new(tag: Tag, used: bool) -> Self {
         TagExpr(SingleTag { tag, used }, Vec::new())
     }
-    pub fn is(&self, path: &Path) -> anyhow::Result<bool> {
-        let mut result = self.0.is(path)?;
+    pub fn is(&self, item: &mut Item) -> anyhow::Result<bool> {
+        let mut result = self.0.is(item)?;
         for single in &self.1 {
-            result = result && single.is(path)?;
+            result = result && single.is(item)?;
         }
         Ok(result)
     }
@@ -182,8 +182,8 @@ impl Tag {
     pub fn desc(&self) -> &str {
         &self.desc
     }
-    pub fn is(&self, path: &Path) -> anyhow::Result<bool> {
-        self.basis.is(path)
+    pub fn is(&self, item: &mut Item) -> anyhow::Result<bool> {
+        self.basis.is(item)
     }
     pub fn dummy() -> Self {
         Tag { name: "🧱 Dummy".into(), basis: Base::Name("dummy.test".into()), desc: "An object with the name 'dummy.test'. Used as a placeholder inside events, usually you would want to replace it with another useful tag.".into() }
@@ -197,8 +197,8 @@ pub fn all_tags() -> Vec<Tag> {
 pub fn all_tags_sorted_by_columns() -> [Vec<Tag>; 4] {
     [
         vec![
-            Tag { name: "📁 Folder".into(), basis: Base::Type(ItemType::Dir), desc: "An object that contains other files.".into() },
-            Tag { name: "📄 File".into(), basis: Base::Type(ItemType::File), desc: "An object that contains data. The data can be represented in plain text or encoded in any format.".into() },
+            Tag { name: "📁 Folder".into(), basis: Base::Type(FileType::Dir), desc: "An object that contains other files.".into() },
+            Tag { name: "📄 File".into(), basis: Base::Type(FileType::File), desc: "An object that contains data. The data can be represented in plain text or encoded in any format.".into() },
             Tag { name: "🖼️ Image".into(), basis: Base::IsImage, desc: "A file that contains graphics.".into() },
             Tag { name: "🎞️ Video".into(), basis: Base::IsVideo, desc: "A file that contains video materials.".into() },
             Tag { name: "🔉 Audio".into(), basis: Base::IsAudio, desc: "A file that contains audio.".into() },

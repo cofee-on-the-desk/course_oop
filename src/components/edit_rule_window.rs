@@ -19,7 +19,7 @@ use relm4::{
 
 use crate::lib::Base;
 use crate::lib::{all_tags_sorted_by_columns, Event, Rule, Tag, TagExpr, Var};
-use crate::utils::Bind;
+use crate::util::Bind;
 use crate::AppMsg;
 use crate::SENDER;
 
@@ -43,8 +43,7 @@ pub enum EditRuleInput {
     Delete,
     SetTitle(String),
     RemoveEventAt(usize),
-    AddEventCopy,
-    AddEventMove,
+    AddEvent(Event),
     ClickedTag(usize, Tag),
     ResetTag(usize),
     ChangedPath(usize, PathBuf),
@@ -146,13 +145,13 @@ impl SimpleComponent for EditRuleWindow {
                                     set_orientation: gtk::Orientation::Horizontal,
                                     set_margin_all: 5,
                                     append = &icon_label_button("Copy", "edit-copy-symbolic") -> gtk::Button {
-                                        connect_clicked[sender, popover] => move |_| { sender.input(EditRuleInput::AddEventCopy ); popover.hide() },
+                                        connect_clicked[sender, popover] => move |_| { sender.input(EditRuleInput::AddEvent(Event::copy()) ); popover.hide() },
                                     },
                                     append = &icon_label_button("Move", "go-jump-symbolic") -> gtk::Button {
-                                        connect_clicked[sender, popover] => move |_| { sender.input(EditRuleInput::AddEventMove ); popover.hide() },
+                                        connect_clicked[sender, popover] => move |_| { sender.input(EditRuleInput::AddEvent(Event::mv()) ); popover.hide() },
                                     },
-                                    append = &icon_label_button("Notify", "starred-symbolic") -> gtk::Button {
-                                    //    connect_clicked[sender, popover] => move |_| { sender.input(EditRuleInput::AddEventNotify ) },
+                                    append = &icon_label_button("Trash", "user-trash-symbolic") -> gtk::Button {
+                                        connect_clicked[sender, popover] => move |_| { sender.input(EditRuleInput::AddEvent(Event::trash()) ); popover.hide() },
                                     },
                                 }
                             }
@@ -197,11 +196,8 @@ impl SimpleComponent for EditRuleWindow {
             EditRuleInput::RemoveEventAt(index) => {
                 self.rule.events_mut().remove(index);
             }
-            EditRuleInput::AddEventCopy => {
-                self.rule.events_mut().push(Event::copy());
-            }
-            EditRuleInput::AddEventMove => {
-                self.rule.events_mut().push(Event::mv());
+            EditRuleInput::AddEvent(event) => {
+                self.rule.events_mut().push(event);
             }
             EditRuleInput::ChangedPath(index, path) => {
                 if let Some(event) = self.rule.events_mut().get_mut(index) {

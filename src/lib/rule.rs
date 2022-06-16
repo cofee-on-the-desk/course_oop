@@ -54,13 +54,9 @@ pub enum Event {
         target: PathBuf,
         overwrite: bool,
     },
-    Idle,
-}
-
-impl Default for Event {
-    fn default() -> Self {
-        Event::Idle
-    }
+    Trash {
+        expr: TagExpr,
+    },
 }
 
 impl Event {
@@ -68,14 +64,14 @@ impl Event {
         match &self {
             Event::Copy { .. } => "Copy",
             Event::Move { .. } => "Move",
-            Event::Idle => "Idle",
+            Event::Trash { .. } => "Trash",
         }
     }
     pub fn gtk_icon(&self) -> &str {
         match &self {
             Event::Copy { .. } => "edit-copy-symbolic",
             Event::Move { .. } => "go-jump-symbolic",
-            Event::Idle => "preferences-desktop-screensaver-symbolic",
+            Event::Trash { .. } => "user-trash-symbolic",
         }
     }
     pub fn vars(&self) -> Vec<Var> {
@@ -130,10 +126,13 @@ impl Event {
                 }
                 vars
             }
-            Event::Idle => vec![Var::String {
-                label: "Idle".into(),
-                css_class: Some("bold"),
-            }],
+            Event::Trash { expr } => vec![
+                Var::String {
+                    label: "Trash".into(),
+                    css_class: Some("bold"),
+                },
+                Var::TagExpr(expr.clone()),
+            ],
         }
     }
     pub fn copy() -> Self {
@@ -150,68 +149,71 @@ impl Event {
             overwrite: false,
         }
     }
+    pub fn trash() -> Self {
+        Event::Trash {
+            expr: TagExpr::default(),
+        }
+    }
     pub fn set_path(&mut self, p: PathBuf) {
         match self {
             Event::Copy { target, .. } => *target = p,
             Event::Move { target, .. } => *target = p,
-            Event::Idle => {}
+            Event::Trash { .. } => unreachable!(),
         }
     }
     pub fn tag_expr(&self) -> &TagExpr {
         match self {
             Event::Copy { expr, .. } => expr,
             Event::Move { expr, .. } => expr,
-            Event::Idle => unimplemented!(),
+            Event::Trash { expr, .. } => expr,
         }
     }
     pub fn tag_expr_mut(&mut self) -> &mut TagExpr {
         match self {
             Event::Copy { expr, .. } => expr,
             Event::Move { expr, .. } => expr,
-            Event::Idle => unimplemented!(),
+            Event::Trash { expr, .. } => expr,
         }
     }
     pub fn execute(
         &self,
         path: impl AsRef<Path>,
     ) -> anyhow::Result<Vec<SkippableResult<LogEntry>>> {
-        match self {
+        let items = read_path(path)?;
+        let files = items
+            .into_iter()
+            .filter_map(|mut item| {
+                if let Ok(is) = self.tag_expr().is(&mut item) {
+                    is
+                } else {
+                    false
+                }
+                .then(|| item)
+            })
+            .map(|item| item.path().to_owned())
+            .collect::<Vec<_>>();
+        let (target, results) = match self {
             Event::Copy {
                 expr,
                 target,
                 overwrite,
-            } => {
-                let files = read_path(path)?
-                    .into_iter()
-                    .filter(|item| {
-                        if let Ok(is) = expr.is(item.path()) {
-                            is
-                        } else {
-                            false
-                        }
-                    })
-                    .map(|item| item.path().to_owned())
-                    .collect::<Vec<_>>();
-                let results = copy(&files, target, *overwrite)
-                    .into_iter()
-                    .map(|result| match result {
-                        SkippableResult::Ok(file) => {
-                            SkippableResult::Ok(LogEntry::new(self, target, file))
-                        }
-                        SkippableResult::Skipped => SkippableResult::Skipped,
-                        SkippableResult::Err(e) => SkippableResult::Err(e),
-                    })
-                    .collect::<Vec<_>>();
-
-                Ok(results)
-            }
+            } => (Some(target), copy(&files, target, *overwrite)),
             Event::Move {
                 expr,
                 target,
                 overwrite,
-            } => todo!(),
-            Event::Idle => todo!(),
-        }
+            } => (Some(target), mv(&files, target, *overwrite)),
+            Event::Trash { expr } => (None, trash(&files)),
+        };
+        let results = results
+            .into_iter()
+            .map(|result| match result {
+                SkippableResult::Ok(file) => SkippableResult::Ok(LogEntry::new(self, target, file)),
+                SkippableResult::Skipped => SkippableResult::Skipped,
+                SkippableResult::Err(e) => SkippableResult::Err(e),
+            })
+            .collect::<Vec<_>>();
+        Ok(results)
     }
 }
 
@@ -242,7 +244,7 @@ fn copy(
                         SkippableResult::Skipped
                     } else {
                         let options = fs_extra::dir::CopyOptions::new();
-                        match fs_extra::copy_items(dbg!(&[path]), dbg!(to), &options) {
+                        match fs_extra::copy_items(&[path], to, &options) {
                             Ok(_) => SkippableResult::Ok(path.to_owned()),
                             Err(e) => SkippableResult::Err(e.into()),
                         }
@@ -258,11 +260,56 @@ fn copy(
 }
 
 fn mv(
-    path: impl AsRef<Path>,
-    target: impl AsRef<Path>,
+    // Files to move
+    files: &[impl AsRef<Path>],
+    // Folder to move files into
+    to: impl AsRef<Path>,
     overwrite: bool,
-) -> anyhow::Result<LogEntry> {
-    todo!()
+) -> Vec<SkippableResult<PathBuf>> {
+    let to = to.as_ref();
+    files
+        .iter()
+        .map(|file| {
+            let path = file.as_ref();
+            if let Some(file_name) = path.file_name() {
+                if to.is_dir() {
+                    if !overwrite && to.join(file_name).exists() {
+                        SkippableResult::Skipped
+                    } else {
+                        let options = fs_extra::dir::CopyOptions::new();
+                        match fs_extra::move_items(&[path], to, &options) {
+                            Ok(_) => SkippableResult::Ok(path.to_owned()),
+                            Err(e) => SkippableResult::Err(e.into()),
+                        }
+                    }
+                } else {
+                    SkippableResult::Err(anyhow::anyhow!("{path:?} is not a directory"))
+                }
+            } else {
+                SkippableResult::Err(anyhow::anyhow!("{path:?} has no file name"))
+            }
+        })
+        .collect()
+}
+
+fn trash(
+    // Files to remove
+    files: &[impl AsRef<Path>],
+) -> Vec<SkippableResult<PathBuf>> {
+    files
+        .iter()
+        .map(|file| {
+            let path = file.as_ref();
+            if path.exists() {
+                match trash::delete(path) {
+                    Ok(_) => SkippableResult::Ok(path.to_owned()),
+                    Err(e) => SkippableResult::Err(e.into()),
+                }
+            } else {
+                SkippableResult::Skipped
+            }
+        })
+        .collect()
 }
 
 #[derive(Debug)]
