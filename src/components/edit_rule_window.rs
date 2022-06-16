@@ -288,7 +288,7 @@ fn event_view(
         container = gtk::Box {
             set_orientation: gtk::Orientation::Horizontal,
             set_spacing: 10,
-            gtk::Image { set_icon_name: Some(event.gtk_icon()), },
+            gtk::Image { set_icon_name: Some(event.icon_name()), },
             #[iterate]
             append: vars.iter(),
         }

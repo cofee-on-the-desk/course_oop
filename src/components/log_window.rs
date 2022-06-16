@@ -5,11 +5,9 @@ use std::{
 };
 
 use adw::prelude::BinExt;
-use gtk::prelude::{BoxExt, ButtonExt, GtkWindowExt, OrientableExt, WidgetExt};
+use gtk::prelude::{BoxExt, ButtonExt, GtkWindowExt, IsA, OrientableExt, WidgetExt};
 use relm4::{
-    adw,
-    gtk::{self, prelude::IsA},
-    view, ComponentParts, ComponentSender, RelmRemoveAllExt, Sender, SimpleComponent, WidgetPlus,
+    adw, gtk, view, ComponentParts, ComponentSender, RelmRemoveAllExt, SimpleComponent, WidgetPlus,
 };
 
 use crate::{lib::Event, log::Log};
@@ -70,8 +68,7 @@ impl SimpleComponent for LogWindow {
                                 .entries()
                                 .iter()
                                 .rev()
-                                .enumerate()
-                                .map(|(index, entry)| entry_view(index, entry, &sender.input))
+                                .map(entry_view)
                                 .collect::<Vec<_>>()
                                 .iter(),
                         }
@@ -94,11 +91,7 @@ impl SimpleComponent for LogWindow {
     }
 }
 
-fn entry_view(
-    index: usize,
-    entry: &LogEntry,
-    sender: &Sender<LogWindowInput>,
-) -> impl IsA<gtk::Widget> {
+fn entry_view(entry: &LogEntry) -> impl IsA<gtk::Widget> {
     let time = entry.time();
     view! {
         row = gtk::ListBoxRow {
@@ -192,7 +185,7 @@ fn event_view(event: &Event, path: &Path) -> impl IsA<gtk::Widget> {
         container = gtk::Box {
             set_orientation: gtk::Orientation::Horizontal,
             set_spacing: 10,
-            gtk::Image { set_icon_name: Some(event.gtk_icon()), },
+            gtk::Image { set_icon_name: Some(event.icon_name()), },
             #[iterate]
             append: vars.iter(),
         }

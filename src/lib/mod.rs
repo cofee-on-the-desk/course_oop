@@ -6,3 +6,6 @@ pub use tag::*;
 
 mod rule;
 pub use rule::*;
+
+mod event;
+pub use event::*;

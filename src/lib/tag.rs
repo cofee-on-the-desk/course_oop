@@ -142,7 +142,7 @@ impl TagExpr {
         } else {
             std::iter::once(&self.0)
                 .chain(self.1.iter())
-                .map(|single| single.desc())
+                .map(|single| format!("{}: {}", single.tag.name(), single.desc()))
                 .collect::<Vec<_>>()
                 .join("\n")
         }

@@ -23,7 +23,7 @@ use util::Expect;
 use adw::prelude::{BinExt, ExpanderRowExt};
 use relm4::gtk::glib::FromVariant;
 use relm4::gtk::prelude::{
-    BoxExt, Cast, GestureExt, GestureSingleExt, IsA, PopoverExt, SelectionModelExt, StaticType,
+    BoxExt, Cast, GestureSingleExt, IsA, PopoverExt, SelectionModelExt, StaticType,
     StaticVariantType, ToVariant,
 };
 use relm4::{
@@ -514,7 +514,7 @@ pub fn event_view(index: usize, event: &Event) -> impl IsA<gtk::Widget> {
             gtk::Box {
                 set_orientation: gtk::Orientation::Horizontal,
                 set_spacing: 10,
-                gtk::Image { set_icon_name: Some(event.gtk_icon()), },
+                gtk::Image { set_icon_name: Some(event.icon_name()), },
                 #[iterate]
                 append: vars.iter(),
             }
