@@ -18,16 +18,15 @@ const RULES_FILENAME: &str = "rules.json";
 const LOG_FILENAME: &str = "log.json";
 
 impl Database {
-    /// Get a reference to the database rules.
     pub fn rules(&self) -> &HashMap<PathBuf, Vec<Rule>> {
         &self.rules
     }
-
-    /// Get a mutable reference to the database rules.
     pub fn rules_mut(&mut self) -> &mut HashMap<PathBuf, Vec<Rule>> {
         &mut self.rules
     }
-
+    pub fn log(&self) -> &Arc<Mutex<Log>> {
+        &self.log
+    }
     pub fn load() -> anyhow::Result<Self> {
         let base_dir = dirs::config_dir()
             .with_context(|| "Unable to find application config directory")?
@@ -81,10 +80,6 @@ impl Database {
         std::fs::write(log_path, log_bits)?;
 
         Ok(())
-    }
-
-    pub fn log(&self) -> &Arc<Mutex<Log>> {
-        &self.log
     }
 }
 

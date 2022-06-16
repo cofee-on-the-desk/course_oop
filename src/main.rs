@@ -390,17 +390,14 @@ fn selection_model(items: &[Item]) -> gtk::MultiSelection {
                 },
                 add_controller = &gtk::GestureClick {
                     set_button: 3,
-                    connect_pressed[selection_model, gtk_box] => move |_, _, _, _| {
-                        let selection = selection_model.selection();
-                        if selection.size() > 1 {
-                            let popover = create_popover(vec![("Properties", AppMsg::OpenPropertiesAt(index))]);
-                            gtk_box.append(&popover);
-                            let gtk_box_cloned = gtk_box.clone();
-                            popover.show();
-                            popover.connect_closed(move |popover| {
-                                gtk_box_cloned.remove(popover);
-                            });
-                        };
+                    connect_pressed[gtk_box] => move |_, _, _, _| {
+                        let popover = create_popover(vec![("Properties", AppMsg::OpenPropertiesAt(index))]);
+                        gtk_box.append(&popover);
+                        let gtk_box_cloned = gtk_box.clone();
+                        popover.show();
+                        popover.connect_closed(move |popover| {
+                            gtk_box_cloned.remove(popover);
+                        });
                     }
                 }
             }

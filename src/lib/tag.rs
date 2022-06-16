@@ -17,8 +17,6 @@ pub enum Base {
     SizeLT(Byte),
     SizeGT(Byte),
     Extension(Vec<String>),
-    // We have to add a separate variant for each ordering
-    // because `std::cmp::Ordering` does not implement serde traits.
     ChildrenCountLT(usize),
     ChildrenCountET(usize),
     ChildrenCountGT(usize),
